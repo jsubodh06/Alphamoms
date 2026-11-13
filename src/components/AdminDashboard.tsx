@@ -20,6 +20,17 @@ import {
   type EventConfig,
 } from '../config/eventConfig';
 import { auth, googleAuthProvider } from '../lib/firebase';
+import {
+  bulkImportAdminRsvps,
+  checkAdminSessionClient,
+  deleteAdminRsvp,
+  fetchAdminRsvps,
+  loginAdminWithCredentials,
+  logoutAdminClient,
+  updateAdminEventSettings,
+  updateAdminRsvp,
+  verifyAdminGoogleToken,
+} from '../lib/rsvpClient';
 
 interface AdminRsvp {
   id: number;
@@ -51,6 +62,7 @@ export function AdminDashboard({
 }) {
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
+  const [storageMode, setStorageMode] = useState<'backend' | 'static'>('backend');
   const [checkingSession, setCheckingSession] = useState(true);
 
   // Login form state
@@ -83,40 +95,18 @@ export function AdminDashboard({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const authHeaders = useCallback((): HeadersInit => {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (authToken) {
-      headers.Authorization = `Bearer ${authToken}`;
-    }
-    return headers;
-  }, [authToken]);
-
   const fetchAdminData = useCallback(
     async (overrideToken?: string) => {
       setLoadingData(true);
       setDataError(null);
       try {
         const tokenToUse = overrideToken ?? authToken;
-        const res = await fetch('/api/admin/rsvps', {
-          credentials: 'include',
-          headers: tokenToUse
-            ? { Authorization: `Bearer ${tokenToUse}` }
-            : undefined,
-        });
-        if (res.status === 401 || res.status === 403) {
+        const data = await fetchAdminRsvps(tokenToUse);
+        if (data.unauthorized) {
           setAdminEmail(null);
           setAuthToken(null);
           return;
         }
-        if (!res.ok) {
-          throw new Error('Could not load RSVP list.');
-        }
-        const data = (await res.json()) as {
-          rsvps: AdminRsvp[];
-          summary: AdminSummary;
-        };
         setRsvps(data.rsvps);
         setSummary(data.summary);
         setSettingsForm(data.summary.settings);
@@ -131,22 +121,15 @@ export function AdminDashboard({
     [authToken],
   );
 
-  // Check existing cookie session on mount
+  // Check existing session on mount
   useEffect(() => {
     const checkSession = async () => {
       try {
-        const res = await fetch('/api/admin/session', {
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = (await res.json()) as {
-            authenticated: boolean;
-            admin?: { email: string };
-          };
-          if (data.authenticated && data.admin) {
-            setAdminEmail(data.admin.email);
-            await fetchAdminData();
-          }
+        const session = await checkAdminSessionClient();
+        setStorageMode(session.mode);
+        if (session.authenticated && session.email) {
+          setAdminEmail(session.email);
+          await fetchAdminData();
         }
       } catch {
         // Not signed in
@@ -163,32 +146,18 @@ export function AdminDashboard({
     setLoggingIn(true);
     setLoginError(null);
     try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: username.trim(), password }),
-      });
-      const rawText = await res.text();
-      let data: { error?: string; token?: string; email?: string } = {};
-      try {
-        data = rawText ? (JSON.parse(rawText) as typeof data) : {};
-      } catch {
-        setLoginError(
-          `Server returned an unexpected response (${res.status}). Verify /api/admin/login is deployed.`,
-        );
+      const result = await loginAdminWithCredentials(username, password);
+      setStorageMode(result.mode);
+      if (!result.ok || !result.token) {
+        setLoginError(result.error || 'Invalid credentials.');
         return;
       }
-      if (!res.ok || !data.token) {
-        setLoginError(data.error || 'Invalid credentials.');
-        return;
-      }
-      setAuthToken(data.token);
-      setAdminEmail(data.email || username.trim());
+      setAuthToken(result.token);
+      setAdminEmail(result.email || username.trim());
       setPassword('');
-      await fetchAdminData(data.token);
+      await fetchAdminData(result.token);
     } catch {
-      setLoginError('Unable to reach server. Please try again.');
+      setLoginError('Unable to sign in right now. Please try again.');
     } finally {
       setLoggingIn(false);
     }
@@ -201,23 +170,21 @@ export function AdminDashboard({
     try {
       const cred = await signInWithPopup(auth, googleAuthProvider);
       const idToken = await cred.user.getIdToken();
-      const verifyRes = await fetch('/api/admin/session', {
-        headers: { Authorization: `Bearer ${idToken}` },
-      });
-      const verifyData = (await verifyRes.json()) as {
-        error?: string;
-        authenticated?: boolean;
-        admin?: { email: string };
-      };
-      if (!verifyRes.ok || !verifyData.authenticated) {
+      const verified = await verifyAdminGoogleToken(
+        idToken,
+        cred.user.email,
+        cred.user.emailVerified,
+      );
+      setStorageMode(verified.mode);
+      if (!verified.ok) {
         await signOut(auth);
         setLoginError(
-          verifyData.error || 'This Google account is not authorized for admin.',
+          verified.error || 'This Google account is not authorized for admin.',
         );
         return;
       }
       setAuthToken(idToken);
-      setAdminEmail(verifyData.admin?.email || cred.user.email || 'Admin');
+      setAdminEmail(verified.email || cred.user.email || 'Admin');
       await fetchAdminData(idToken);
     } catch (err: unknown) {
       setLoginError(
@@ -229,10 +196,7 @@ export function AdminDashboard({
   };
 
   const handleLogout = async () => {
-    await fetch('/api/admin/logout', {
-      method: 'POST',
-      credentials: 'include',
-    }).catch(() => undefined);
+    await logoutAdminClient();
     await signOut(auth).catch(() => undefined);
     setAuthToken(null);
     setAdminEmail(null);
@@ -434,35 +398,22 @@ export function AdminDashboard({
         ]),
       }));
 
-      const res = await fetch('/api/admin/rsvps/import', {
-        method: 'POST',
-        credentials: 'include',
-        headers: authHeaders(),
-        body: JSON.stringify({ rows: mappedRows }),
-      });
-
-      const result = (await res.json()) as {
-        error?: string;
-        importedCount?: number;
-        updatedCount?: number;
-        skipped?: Array<{ row: number; reason: string }>;
-      };
-
-      if (!res.ok) {
-        setDataError(result.error || 'Import failed.');
-        return;
-      }
+      const result = await bulkImportAdminRsvps(mappedRows, authToken);
 
       const skippedMsg =
         result.skipped && result.skipped.length > 0
           ? ` (${result.skipped.length} skipped)`
           : '';
       setStatusNotice(
-        `Excel import complete: ${result.importedCount ?? 0} added, ${result.updatedCount ?? 0} updated${skippedMsg}.`,
+        `Excel import complete: ${result.importedCount} added, ${result.updatedCount} updated${skippedMsg}.`,
       );
       await fetchAdminData();
-    } catch {
-      setDataError('Could not read the Excel file. Please verify the format.');
+    } catch (err: unknown) {
+      setDataError(
+        err instanceof Error
+          ? err.message
+          : 'Could not read the Excel file. Please verify the format.',
+      );
     }
   };
 
@@ -472,11 +423,9 @@ export function AdminDashboard({
     setSavingEdit(true);
     setDataError(null);
     try {
-      const res = await fetch(`/api/admin/rsvps/${editingRow.id}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: authHeaders(),
-        body: JSON.stringify({
+      await updateAdminRsvp(
+        editingRow.id,
+        {
           momName: editingRow.momName,
           childNameAge: editingRow.childNameAge,
           phone: editingRow.phone,
@@ -484,18 +433,16 @@ export function AdminDashboard({
           paediatricianQuestion: editingRow.paediatricianQuestion,
           coffeeOrder: editingRow.coffeeOrder,
           isWaitlist: editingRow.isWaitlist,
-        }),
-      });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setDataError(data.error || 'Failed to update RSVP.');
-        return;
-      }
+        },
+        authToken,
+      );
       setEditingRow(null);
       setStatusNotice('RSVP updated.');
       await fetchAdminData();
-    } catch {
-      setDataError('Network error while updating RSVP.');
+    } catch (err: unknown) {
+      setDataError(
+        err instanceof Error ? err.message : 'Failed to update RSVP.',
+      );
     } finally {
       setSavingEdit(false);
     }
@@ -506,21 +453,14 @@ export function AdminDashboard({
     setDeletingId(id);
     setDataError(null);
     try {
-      const res = await fetch(`/api/admin/rsvps/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: authHeaders(),
-      });
-      if (!res.ok) {
-        const data = (await res.json()) as { error?: string };
-        setDataError(data.error || 'Failed to delete RSVP.');
-        return;
-      }
+      await deleteAdminRsvp(id, authToken);
       setConfirmDeleteId(null);
       setStatusNotice('RSVP removed.');
       await fetchAdminData();
-    } catch {
-      setDataError('Network error while deleting RSVP.');
+    } catch (err: unknown) {
+      setDataError(
+        err instanceof Error ? err.message : 'Failed to delete RSVP.',
+      );
     } finally {
       setDeletingId(null);
     }
@@ -533,27 +473,14 @@ export function AdminDashboard({
     setDataError(null);
     setStatusNotice(null);
     try {
-      const res = await fetch('/api/admin/settings', {
-        method: 'PUT',
-        credentials: 'include',
-        headers: authHeaders(),
-        body: JSON.stringify(settingsForm),
-      });
-      const data = (await res.json()) as {
-        error?: string;
-        settings?: EventConfig;
-      };
-      if (!res.ok) {
-        setDataError(data.error || 'Failed to save event settings.');
-        return;
-      }
-      if (data.settings) {
-        setSettingsForm(data.settings);
-      }
+      const updated = await updateAdminEventSettings(settingsForm, authToken);
+      setSettingsForm(updated);
       setStatusNotice('Event settings updated.');
       await fetchAdminData();
-    } catch {
-      setDataError('Network error while saving settings.');
+    } catch (err: unknown) {
+      setDataError(
+        err instanceof Error ? err.message : 'Failed to save event settings.',
+      );
     } finally {
       setSavingSettings(false);
     }
@@ -725,6 +652,21 @@ export function AdminDashboard({
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
+        {storageMode === 'static' && (
+          <div className="rounded-xl border border-[#c98a4b]/35 bg-[#2e180d]/90 px-4 py-3 text-xs sm:text-sm text-[#e4c29b]">
+            Running in static browser mode (no shared backend connected). RSVPs
+            are saved on this browser; set{' '}
+            <span className="font-mono-tabular text-[#f7ecdc]">
+              VITE_API_BASE_URL
+            </span>{' '}
+            or{' '}
+            <span className="font-mono-tabular text-[#f7ecdc]">
+              VITE_GOOGLE_SHEETS_WEBHOOK_URL
+            </span>{' '}
+            in Vercel to collect RSVPs across devices.
+          </div>
+        )}
+
         {statusNotice && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c98a4b]/45 bg-[#361d10] px-4 py-3 text-sm text-[#f7ecdc]">
             <span>{statusNotice}</span>

@@ -40,11 +40,13 @@ function doPost(e) {
 3. Click **Deploy → New deployment → Web app** (Execute as: *Me*, Who has access: *Anyone*).
 4. Copy the Web App URL and set `GOOGLE_SHEETS_WEBHOOK_URL` in your environment secrets.
 
-## Deploying to Vercel
+## Deploying to Vercel (Without Backend Deployment)
 
-This project includes `api/index.ts` and `vercel.json` so both `/api/*` Express endpoints and the `/admin` SPA route work on Vercel:
+`vercel.json` builds and serves the static React frontend (`dist/`) directly with **no backend deployment required** on Vercel:
 
-1. In Vercel **Project Settings → Environment Variables**, configure your PostgreSQL connection (`SQL_HOST`, `SQL_USER`, `SQL_PASSWORD`, `SQL_DB_NAME`) and `ADMIN_SESSION_SECRET` (any random secret string so admin cookies stay valid across serverless instances), plus optional `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`, and `GOOGLE_SHEETS_WEBHOOK_URL`.
-2. Push the schema (`npx drizzle-kit push --config=src/db/drizzle.config.ts`) if pointing at a fresh PostgreSQL instance.
-3. If you also use **Sign in with Google** on `/admin`, add your `*.vercel.app` domain in **Firebase Console → Authentication → Settings → Authorized domains**.
+- **Admin Login**: Works client-side out of the box (using Web Crypto SHA-256 verification or Google Sign-In after adding your `*.vercel.app` domain in **Firebase Console → Authentication → Settings → Authorized domains**).
+- **Collecting RSVPs Across Devices**:
+  - **Option A (Recommended)**: Keep your Cloud Run backend running and set `VITE_API_BASE_URL` in Vercel **Environment Variables** to your Cloud Run URL so all moms' RSVPs save to Cloud SQL PostgreSQL and appear in `/admin`.
+  - **Option B (Zero Backend / Google Sheets)**: Set `VITE_GOOGLE_SHEETS_WEBHOOK_URL` in Vercel **Environment Variables** to your Google Apps Script Web App URL to send every RSVP straight to your Google Sheet.
+  - **Option C (Local Demo)**: Without either variable set, RSVPs and Event Settings are stored in the current browser's `localStorage`.
 

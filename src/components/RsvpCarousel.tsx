@@ -21,6 +21,7 @@ import {
   normalizeIndianPhone,
   type EventConfig,
 } from '../config/eventConfig';
+import { fetchPublicEvent, submitPublicRsvp } from '../lib/rsvpClient';
 import { CoffeeSleeveCard } from './CoffeeSleeveCard';
 import { ConfettiBurst } from './ConfettiBurst';
 import { SteamingCup } from './SteamingCup';
@@ -91,9 +92,7 @@ export function RsvpCarousel({
 
   const loadEventSummary = useCallback(async () => {
     try {
-      const res = await fetch('/api/event');
-      if (!res.ok) return;
-      const data = (await res.json()) as PublicEventSummary;
+      const data = await fetchPublicEvent();
       if (data?.settings) {
         setEventSummary(data);
       }
@@ -369,45 +368,31 @@ export function RsvpCarousel({
     setSubmitError(null);
 
     const mode = options?.mode ?? 'create';
-    const method = mode === 'update' ? 'PUT' : 'POST';
 
     try {
-      const res = await fetch('/api/rsvps', {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          momName: momName.trim(),
-          childNameAge: childNameAge.trim(),
-          phone: normalizeIndianPhone(phone),
-          attending,
-          paediatricianQuestion: paediatricianQuestion.trim(),
-          coffeeOrder: finalCoffeeOrder,
-          joinWaitlist: Boolean(options?.joinWaitlist),
-        }),
+      const data = await submitPublicRsvp({
+        momName: momName.trim(),
+        childNameAge: childNameAge.trim(),
+        phone: normalizeIndianPhone(phone),
+        attending,
+        paediatricianQuestion: paediatricianQuestion.trim(),
+        coffeeOrder: finalCoffeeOrder,
+        mode,
+        joinWaitlist: Boolean(options?.joinWaitlist),
       });
 
-      const data = (await res.json()) as {
-        code?: string;
-        error?: string;
-        status?: 'confirmed' | 'updated' | 'waitlisted';
-        settings?: EventConfig;
-        confirmedCount?: number;
-        seatsLeft?: number;
-        rsvp?: { isWaitlist?: boolean };
-      };
-
-      if (res.status === 409 && data.code === 'DUPLICATE_PHONE') {
+      if (data.statusCode === 409 && data.code === 'DUPLICATE_PHONE') {
         setSubmitState('duplicate');
         return;
       }
 
-      if (res.status === 409 && data.code === 'SEATS_FULL') {
+      if (data.statusCode === 409 && data.code === 'SEATS_FULL') {
         setSubmitState('full');
         await loadEventSummary();
         return;
       }
 
-      if (!res.ok) {
+      if (!data.ok) {
         setSubmitState('error');
         setSubmitError(data.error || 'Could not save your RSVP. Please retry.');
         return;
