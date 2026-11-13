@@ -39,3 +39,12 @@ function doPost(e) {
 
 3. Click **Deploy → New deployment → Web app** (Execute as: *Me*, Who has access: *Anyone*).
 4. Copy the Web App URL and set `GOOGLE_SHEETS_WEBHOOK_URL` in your environment secrets.
+
+## Deploying to Vercel
+
+This project includes `api/index.ts` and `vercel.json` so both `/api/*` Express endpoints and the `/admin` SPA route work on Vercel:
+
+1. In Vercel **Project Settings → Environment Variables**, configure your PostgreSQL connection (`SQL_HOST`, `SQL_USER`, `SQL_PASSWORD`, `SQL_DB_NAME`) and `ADMIN_SESSION_SECRET` (any random secret string so admin cookies stay valid across serverless instances), plus optional `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`, and `GOOGLE_SHEETS_WEBHOOK_URL`.
+2. Push the schema (`npx drizzle-kit push --config=src/db/drizzle.config.ts`) if pointing at a fresh PostgreSQL instance.
+3. If you also use **Sign in with Google** on `/admin`, add your `*.vercel.app` domain in **Firebase Console → Authentication → Settings → Authorized domains**.
+

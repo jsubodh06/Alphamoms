@@ -169,11 +169,16 @@ export function AdminDashboard({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
       });
-      const data = (await res.json()) as {
-        error?: string;
-        token?: string;
-        email?: string;
-      };
+      const rawText = await res.text();
+      let data: { error?: string; token?: string; email?: string } = {};
+      try {
+        data = rawText ? (JSON.parse(rawText) as typeof data) : {};
+      } catch {
+        setLoginError(
+          `Server returned an unexpected response (${res.status}). Verify /api/admin/login is deployed.`,
+        );
+        return;
+      }
       if (!res.ok || !data.token) {
         setLoginError(data.error || 'Invalid credentials.');
         return;
