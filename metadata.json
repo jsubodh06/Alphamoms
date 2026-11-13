@@ -1,0 +1,6 @@
+{
+  "name": "Alpha Moms – Coffee Meet RSVP",
+  "description": "Mommy, let's make some coffee memories! Warm coffee-shop 3D RSVP experience for the Alpha Moms Coffee Meet with Dr. Pratyush Jain.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

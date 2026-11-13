@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+:root {
+  --vvh: 100dvh;
+  --espresso: #241209;
+  --roast: #4a2a1a;
+  --latte: #d9b99b;
+  --foam-cream: #f7ecdc;
+  --kraft: #e4c29b;
+  --caramel: #c98a4b;
+  --blush-pink: #e9a9a0;
+}
+
+@layer base {
+  html,
+  body {
+    font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+    background-color: #241209;
+    color: #f7ecdc;
+    overscroll-behavior-y: contain;
+  }
+}
+
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.espresso-canvas {
+  background:
+    radial-gradient(ellipse 85% 48% at 50% 102%, rgba(201, 138, 75, 0.34) 0%, rgba(74, 42, 26, 0.24) 45%, transparent 78%),
+    radial-gradient(circle at 18% 12%, rgba(233, 169, 160, 0.08) 0%, transparent 42%),
+    linear-gradient(180deg, #160a05 0%, #241209 36%, #31190d 72%, #3d2011 100%);
+}
+
+.grain-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  opacity: 0.045;
+  mix-blend-mode: overlay;
+}
+
+.coffee-sleeve-band {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      #c98a4b 0px,
+      #c98a4b 10px,
+      #b77739 10px,
+      #b77739 12px,
+      #4a2a1a 12px,
+      #4a2a1a 22px,
+      #3b2013 22px,
+      #3b2013 24px
+    );
+}
+
+.foam-paper {
+  background:
+    radial-gradient(circle at 12% 10%, rgba(255, 252, 246, 0.8) 0%, transparent 55%),
+    linear-gradient(165deg, #fbf3e7 0%, #f7ecdc 55%, #efddc4 100%);
+}
+
+.carousel-stage {
+  perspective: 1250px;
+  perspective-origin: 50% 48%;
+}
+
+.carousel-card-gpu {
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition:
+    transform 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.carousel-card-dragging {
+  transition: none !important;
+}
+
+@keyframes steamRise {
+  0% {
+    transform: translate3d(0, 6px, 0) scaleX(0.92);
+    opacity: 0;
+  }
+  25% {
+    opacity: 0.68;
+  }
+  70% {
+    transform: translate3d(4px, -16px, 0) scaleX(1.08);
+    opacity: 0.35;
+  }
+  100% {
+    transform: translate3d(-3px, -28px, 0) scaleX(1.16);
+    opacity: 0;
+  }
+}
+
+.steam-wisp-1 {
+  animation: steamRise 3.2s ease-in-out infinite;
+}
+
+.steam-wisp-2 {
+  animation: steamRise 3.6s ease-in-out 0.9s infinite;
+}
+
+.steam-wisp-3 {
+  animation: steamRise 3.4s ease-in-out 1.8s infinite;
+}
+
+@keyframes beanDrift {
+  0% {
+    transform: translate3d(0, -12vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  12% {
+    opacity: var(--bean-opacity, 0.22);
+  }
+  88% {
+    opacity: var(--bean-opacity, 0.22);
+  }
+  100% {
+    transform: translate3d(var(--bean-sway, 24px), 112vh, 0) rotate(var(--bean-rot, 260deg));
+    opacity: 0;
+  }
+}
+
+.drifting-bean {
+  will-change: transform, opacity;
+  animation: beanDrift var(--bean-duration, 24s) linear var(--bean-delay, 0s) infinite;
+}
+
+@keyframes confettiDrop {
+  0% {
+    transform: translate3d(0, -12px, 0) rotate(0deg) scale(0.7);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--cx, 20px), var(--cy, 220px), 0) rotate(var(--crot, 240deg)) scale(1.05);
+    opacity: 0;
+  }
+}
+
+.confetti-emoji {
+  will-change: transform, opacity;
+  animation: confettiDrop var(--cdur, 2.2s) cubic-bezier(0.2, 0.8, 0.3, 1) var(--cdelay, 0s) forwards;
+}
+
+.pt-safe {
+  padding-top: max(12px, env(safe-area-inset-top));
+}
+
+.pb-safe {
+  padding-bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .steam-wisp-1,
+  .steam-wisp-2,
+  .steam-wisp-3,
+  .drifting-bean,
+  .confetti-emoji {
+    animation: none !important;
+  }
+
+  .drifting-bean {
+    opacity: 0.14 !important;
+    transform: none !important;
+  }
+
+  .carousel-card-gpu {
+    transition: opacity 0.2s ease !important;
+  }
+}
