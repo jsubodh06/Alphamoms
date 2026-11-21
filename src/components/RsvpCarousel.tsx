@@ -24,6 +24,7 @@ import {
 import { fetchPublicEvent, submitPublicRsvp } from '../lib/rsvpClient';
 import { CoffeeSleeveCard } from './CoffeeSleeveCard';
 import { ConfettiBurst } from './ConfettiBurst';
+import { RsvpConfetti, type ConfettiVariant } from './RsvpConfetti';
 import { SteamingCup } from './SteamingCup';
 
 export interface PublicEventSummary {
@@ -70,6 +71,9 @@ export function RsvpCarousel({
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isWaitlistedResult, setIsWaitlistedResult] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
+  const [saveConfettiTrigger, setSaveConfettiTrigger] = useState(0);
+  const [saveConfettiVariant, setSaveConfettiVariant] =
+    useState<ConfettiVariant>('confirmed');
 
   // Mobile keyboard & visualViewport tracking
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
@@ -398,11 +402,15 @@ export function RsvpCarousel({
         return;
       }
 
-      setIsWaitlistedResult(
-        data.status === 'waitlisted' || Boolean(data.rsvp?.isWaitlist),
-      );
+      const waitlisted =
+        data.status === 'waitlisted' || Boolean(data.rsvp?.isWaitlist);
+      setIsWaitlistedResult(waitlisted);
       setSubmitState('success');
       setConfettiKey((k) => k + 1);
+      setSaveConfettiVariant(
+        waitlisted ? 'waitlisted' : data.status === 'updated' ? 'updated' : 'confirmed',
+      );
+      setSaveConfettiTrigger((n) => n + 1);
       await loadEventSummary();
     } catch {
       setSubmitState('error');
@@ -441,6 +449,10 @@ export function RsvpCarousel({
       className="relative z-10 flex min-h-[100dvh] flex-col justify-between px-4 pt-safe pb-safe transition-[min-height] duration-150"
     >
       <ConfettiBurst burstKey={confettiKey} />
+      <RsvpConfetti
+        trigger={saveConfettiTrigger}
+        variant={saveConfettiVariant}
+      />
 
       {/* Header — hidden while typing on touch devices so the card & input never jump */}
       <header
