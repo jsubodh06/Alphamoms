@@ -340,7 +340,7 @@ export function CoffeePourIntro({
         <p className="mx-auto mt-3 max-w-md text-xs sm:text-sm leading-relaxed text-[#d9b99b]/95 [text-wrap:balance]">
           We are excited to have you join us for a{' '}
           <span className="font-semibold tracking-wide text-[#f7ecdc]">
-            RENDEZVOUS WITH A {eventSummary.settings.specialGuest.toUpperCase()}
+            RENDEZVOUS WITH {eventSummary.settings.specialGuest.toUpperCase()}
           </span>
         </p>
 

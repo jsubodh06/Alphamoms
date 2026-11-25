@@ -586,7 +586,7 @@ export function RsvpCarousel({
         <p className="mx-auto mt-2 max-w-xl text-xs sm:text-sm leading-relaxed text-[#d9b99b]/95 [text-wrap:balance]">
           We are excited to have you join us for a{' '}
           <span className="font-semibold tracking-wide text-[#f7ecdc]">
-            RENDEZVOUS WITH A {eventSummary.settings.specialGuest.toUpperCase()}
+            RENDEZVOUS WITH {eventSummary.settings.specialGuest.toUpperCase()}
           </span>
         </p>
         <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs text-[#e4c29b]/90 tabular-nums">

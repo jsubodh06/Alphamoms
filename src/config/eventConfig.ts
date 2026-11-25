@@ -103,7 +103,7 @@ export function buildGoogleCalendarUrl(config: EventConfig): string {
   const end = toCompactUtcOrLocal(config.endIso);
   const details = [
     `Mommy, let's make some coffee memories!`,
-    `We are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.`,
+    `We are excited to have you join us for a RENDEZVOUS WITH ${config.specialGuest.toUpperCase()}.`,
     `Venue map: ${config.mapsUrl}`,
     `Note: This is a Dutch-pay coffee meet.`,
   ].join('\n\n');
@@ -121,7 +121,7 @@ export function buildGoogleCalendarUrl(config: EventConfig): string {
 export function buildOutlookCalendarUrl(config: EventConfig): string {
   const body = [
     `Mommy, let's make some coffee memories!`,
-    `We are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.`,
+    `We are excited to have you join us for a RENDEZVOUS WITH ${config.specialGuest.toUpperCase()}.`,
     `Maps: ${config.mapsUrl}`,
     `Note: This is a Dutch-pay coffee meet.`,
   ].join('\n\n');
@@ -153,7 +153,7 @@ export function buildIcsContent(config: EventConfig): string {
       .replace(/\n/g, '\\n');
 
   const description = escapeIcs(
-    `Mommy, let's make some coffee memories!\nWe are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.\nMap: ${config.mapsUrl}\nNote: Dutch-pay coffee meet.`,
+    `Mommy, let's make some coffee memories!\nWe are excited to have you join us for a RENDEZVOUS WITH ${config.specialGuest.toUpperCase()}.\nMap: ${config.mapsUrl}\nNote: Dutch-pay coffee meet.`,
   );
 
   return [
