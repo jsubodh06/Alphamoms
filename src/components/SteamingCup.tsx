@@ -1,14 +1,12 @@
 export function SteamingCup({ compact = false }: { compact?: boolean }) {
   return (
     <div
-      className={`mx-auto flex items-center justify-center transition-transform duration-300 ${
-        compact ? 'scale-75' : 'scale-100'
-      }`}
+      className="inline-flex shrink-0 items-center justify-center transition-transform duration-300"
       aria-hidden="true"
     >
       <svg
-        width="76"
-        height="72"
+        width={compact ? 58 : 76}
+        height={compact ? 55 : 72}
         viewBox="0 0 76 72"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"

@@ -12,24 +12,67 @@ export interface EventConfig {
   seatLimit: number;
 }
 
+export const EVENT_POSTER_URL = '/assets/aistudio/IMG-20261124-WA0008_b60c083e.jpg';
+
 export const DEFAULT_EVENT_CONFIG: EventConfig = {
   title: 'Alpha Moms – Coffee Meet',
-  eventDate: 'Saturday, 28 November 2026',
-  eventTime: '10:30 AM – 12:30 PM',
-  startIso: '2026-11-28T10:30:00',
-  endIso: '2026-11-28T12:30:00',
-  venueName: 'Blue Tokai Coffee Roasters, Khan Market',
-  venueAddress: 'Middle Lane, Khan Market, New Delhi 110003',
-  mapsUrl:
-    'https://maps.google.com/?q=Blue+Tokai+Coffee+Roasters+Khan+Market+New+Delhi',
+  eventDate: 'Monday, 30th Nov 2026',
+  eventTime: '9:30 – 12 noon',
+  startIso: '2026-11-30T09:30:00',
+  endIso: '2026-11-30T12:00:00',
+  venueName: 'At Bunglow No. 6',
+  venueAddress: 'Indore',
+  mapsUrl: 'https://maps.google.com/?q=Bunglow+No.+6+Indore',
   specialGuest: 'Dr. Pratyush Jain',
-  rsvpByDate: '25 November 2026',
+  rsvpByDate: '28th Nov 2026',
   seatLimit: 25,
 };
 
 export const ATTENDING_OPTIONS = [
   'Absolutely! Count me in ☕',
   "I'll try my best!",
+] as const;
+
+export interface DoctorTopicOption {
+  id: string;
+  badge: string;
+  title: string;
+  value: string;
+  description: string;
+}
+
+export const DOCTOR_TOPIC_OPTIONS: readonly DoctorTopicOption[] = [
+  {
+    id: 'toddler-handbook',
+    badge: '1️⃣',
+    title: 'The Toddler Health Handbook',
+    value: '1️⃣ The Toddler Health Handbook',
+    description:
+      'Common illnesses, fever, cough, cold, infections, immunity myths, and knowing when a child actually needs a doctor.',
+  },
+  {
+    id: 'growing-right',
+    badge: '2️⃣',
+    title: 'Is My Child Growing Right?',
+    value: '2️⃣ Is My Child Growing Right?',
+    description:
+      'Growth milestones, height and weight, developmental delays, speech concerns, screen time, and signs that warrant assessment.',
+  },
+  {
+    id: 'vaccines-immunity',
+    badge: '3️⃣',
+    title: 'Vaccines, Immunity & Preventive Care',
+    value: '3️⃣ Vaccines, Immunity & Preventive Care',
+    description:
+      'Vaccination schedules, booster doses, annual health checks, vitamin D, iron deficiency, and evidence-based immunity advice.',
+  },
+  {
+    id: 'all-three',
+    badge: '4️⃣',
+    title: 'All 3',
+    value: '4️⃣ All 3',
+    description: 'Cover all three topics during the session.',
+  },
 ] as const;
 
 export const COFFEE_OPTIONS = [
@@ -51,9 +94,8 @@ export function normalizeIndianPhone(raw: string): string {
 }
 
 function toCompactUtcOrLocal(iso: string): string {
-  // Format YYYYMMDDTHHMMSS for local-time calendar links
   const cleaned = iso.replace(/[-:]/g, '');
-  return cleaned.length >= 15 ? cleaned.slice(0, 15) : '20261128T103000';
+  return cleaned.length >= 15 ? cleaned.slice(0, 15) : '20261130T093000';
 }
 
 export function buildGoogleCalendarUrl(config: EventConfig): string {
@@ -61,7 +103,7 @@ export function buildGoogleCalendarUrl(config: EventConfig): string {
   const end = toCompactUtcOrLocal(config.endIso);
   const details = [
     `Mommy, let's make some coffee memories!`,
-    `Join us for a morning of coffee, conversations and an exclusive interaction with ${config.specialGuest}.`,
+    `We are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.`,
     `Venue map: ${config.mapsUrl}`,
     `Note: This is a Dutch-pay coffee meet.`,
   ].join('\n\n');
@@ -79,7 +121,7 @@ export function buildGoogleCalendarUrl(config: EventConfig): string {
 export function buildOutlookCalendarUrl(config: EventConfig): string {
   const body = [
     `Mommy, let's make some coffee memories!`,
-    `An exclusive morning of coffee & conversations with ${config.specialGuest}.`,
+    `We are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.`,
     `Maps: ${config.mapsUrl}`,
     `Note: This is a Dutch-pay coffee meet.`,
   ].join('\n\n');
@@ -111,7 +153,7 @@ export function buildIcsContent(config: EventConfig): string {
       .replace(/\n/g, '\\n');
 
   const description = escapeIcs(
-    `Mommy, let's make some coffee memories!\nExclusive interaction with ${config.specialGuest}.\nMap: ${config.mapsUrl}\nNote: Dutch-pay coffee meet.`,
+    `Mommy, let's make some coffee memories!\nWe are excited to have you join us for a RENDEZVOUS WITH A ${config.specialGuest.toUpperCase()}.\nMap: ${config.mapsUrl}\nNote: Dutch-pay coffee meet.`,
   );
 
   return [

@@ -9,12 +9,16 @@ import {
   MapPin,
   RefreshCw,
   Sparkles,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import alphaMomsLogo from '../assets/alpha-moms-logo.png';
 import {
   ATTENDING_OPTIONS,
   COFFEE_OPTIONS,
   DEFAULT_EVENT_CONFIG,
+  DOCTOR_TOPIC_OPTIONS,
+  EVENT_POSTER_URL,
   buildGoogleCalendarUrl,
   buildIcsContent,
   buildOutlookCalendarUrl,
@@ -37,8 +41,8 @@ export interface PublicEventSummary {
 
 type SubmitState = 'idle' | 'submitting' | 'success' | 'duplicate' | 'full' | 'error';
 
-const TOTAL_CARDS = 7; // 6 questions + 1 final summary card
-const FINAL_STEP = 6;
+const TOTAL_CARDS = 8; // 7 questions + 1 final summary card
+const FINAL_STEP = 7;
 
 export function RsvpCarousel({
   onOpenAdmin,
@@ -61,9 +65,11 @@ export function RsvpCarousel({
   const [childNameAge, setChildNameAge] = useState('');
   const [phone, setPhone] = useState('');
   const [attending, setAttending] = useState<string>('');
+  const [doctorTopic, setDoctorTopic] = useState<string>('');
   const [paediatricianQuestion, setPaediatricianQuestion] = useState('');
   const [coffeeChoice, setCoffeeChoice] = useState<string>('');
   const [customCoffee, setCustomCoffee] = useState('');
+  const [posterOpen, setPosterOpen] = useState(false);
 
   // Errors & submission
   const [stepError, setStepError] = useState<string | null>(null);
@@ -93,6 +99,7 @@ export function RsvpCarousel({
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
   const customCoffeeInputRef = useRef<HTMLInputElement>(null);
   const autoAdvanceTimerRef = useRef<number | null>(null);
+  const blurTimerRef = useRef<number | null>(null);
 
   const loadEventSummary = useCallback(async () => {
     try {
@@ -142,17 +149,27 @@ export function RsvpCarousel({
       if (autoAdvanceTimerRef.current) {
         window.clearTimeout(autoAdvanceTimerRef.current);
       }
+      if (blurTimerRef.current) {
+        window.clearTimeout(blurTimerRef.current);
+      }
     };
   }, []);
 
+  const isTextStep =
+    currentStep === 0 ||
+    currentStep === 1 ||
+    currentStep === 2 ||
+    currentStep === 5 ||
+    (currentStep === 6 && coffeeChoice === 'Any other choice');
+
   const isTypingMobile =
-    isTouchDevice && (isInputFocused || keyboardOpenByViewport);
+    isTouchDevice && isTextStep && (isInputFocused || keyboardOpenByViewport);
 
   const validateStep = useCallback(
     (step: number): string | null => {
       if (step === 0) {
         if (momName.trim().length < 2) {
-          return "Please enter Mom's name (at least 2 characters).";
+          return "Please enter Alpha mom's name (at least 2 characters).";
         }
       } else if (step === 1) {
         if (childNameAge.trim().length < 2) {
@@ -167,7 +184,11 @@ export function RsvpCarousel({
         if (!attending) {
           return 'Please choose an attendance option to continue.';
         }
-      } else if (step === 5) {
+      } else if (step === 4) {
+        if (!doctorTopic) {
+          return 'Please choose what you would like to ask the doctor.';
+        }
+      } else if (step === 6) {
         if (!coffeeChoice) {
           return 'Please pick your coffee or drink preference.';
         }
@@ -177,7 +198,7 @@ export function RsvpCarousel({
       }
       return null;
     },
-    [attending, childNameAge, coffeeChoice, customCoffee, momName, phone],
+    [attending, childNameAge, coffeeChoice, customCoffee, doctorTopic, momName, phone],
   );
 
   const focusStepInput = useCallback((targetStep: number) => {
@@ -187,9 +208,9 @@ export function RsvpCarousel({
       childInputRef.current?.focus({ preventScroll: true });
     } else if (targetStep === 2) {
       phoneInputRef.current?.focus({ preventScroll: true });
-    } else if (targetStep === 4) {
+    } else if (targetStep === 5) {
       questionInputRef.current?.focus({ preventScroll: true });
-    } else if (targetStep === 5 && coffeeChoice === 'Any other choice') {
+    } else if (targetStep === 6 && coffeeChoice === 'Any other choice') {
       customCoffeeInputRef.current?.focus({ preventScroll: true });
     }
   }, [coffeeChoice]);
@@ -205,11 +226,20 @@ export function RsvpCarousel({
 
       // Keep mobile keyboard open synchronously when moving between text fields
       if (options?.keepKeyboard && (nextStep === 0 || nextStep === 1 || nextStep === 2)) {
+        if (blurTimerRef.current) {
+          window.clearTimeout(blurTimerRef.current);
+          blurTimerRef.current = null;
+        }
         focusStepInput(nextStep);
-      } else if (nextStep === 3 || nextStep === FINAL_STEP) {
+      } else {
+        if (blurTimerRef.current) {
+          window.clearTimeout(blurTimerRef.current);
+          blurTimerRef.current = null;
+        }
         if (document.activeElement instanceof HTMLElement) {
           document.activeElement.blur();
         }
+        setIsInputFocused(false);
       }
 
       setCurrentStep(nextStep);
@@ -248,9 +278,15 @@ export function RsvpCarousel({
     }
   }, [currentStep, goToStep]);
 
-  // Arrow key navigation when not typing inside an input/textarea
+  // Arrow key navigation & Escape to close poster modal
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (posterOpen) {
+        if (e.key === 'Escape') {
+          setPosterOpen(false);
+        }
+        return;
+      }
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'ArrowLeft') {
@@ -267,7 +303,7 @@ export function RsvpCarousel({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentStep, goToStep, handleBack, handleNext, maxReached]);
+  }, [currentStep, goToStep, handleBack, handleNext, maxReached, posterOpen]);
 
   const handleSelectAttending = (option: string) => {
     setAttending(option);
@@ -280,6 +316,20 @@ export function RsvpCarousel({
     }
     autoAdvanceTimerRef.current = window.setTimeout(() => {
       goToStep(4);
+    }, 350);
+  };
+
+  const handleSelectDoctorTopic = (option: string) => {
+    setDoctorTopic(option);
+    setStepError(null);
+    if (submitState !== 'idle') {
+      setSubmitState('idle');
+    }
+    if (autoAdvanceTimerRef.current) {
+      window.clearTimeout(autoAdvanceTimerRef.current);
+    }
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      goToStep(5);
     }, 350);
   };
 
@@ -358,8 +408,8 @@ export function RsvpCarousel({
   }) => {
     if (submitState === 'submitting') return;
 
-    // Validate all required steps before API call
-    for (const s of [0, 1, 2, 3, 5]) {
+    // Validate all required steps before API call (step 5 is optional)
+    for (const s of [0, 1, 2, 3, 4, 6]) {
       const err = validateStep(s);
       if (err) {
         goToStep(s);
@@ -379,6 +429,7 @@ export function RsvpCarousel({
         childNameAge: childNameAge.trim(),
         phone: normalizeIndianPhone(phone),
         attending,
+        doctorTopic,
         paediatricianQuestion: paediatricianQuestion.trim(),
         coffeeOrder: finalCoffeeOrder,
         mode,
@@ -439,9 +490,11 @@ export function RsvpCarousel({
 
   const stageHeightClass = isTypingMobile
     ? 'h-[260px]'
-    : currentStep === FINAL_STEP
-      ? 'h-[530px] sm:h-[545px]'
-      : 'h-[355px] sm:h-[385px]';
+    : currentStep === 4
+      ? 'h-[575px] sm:h-[555px]'
+      : currentStep === FINAL_STEP
+        ? 'h-[550px] sm:h-[565px]'
+        : 'h-[355px] sm:h-[385px]';
 
   return (
     <div
@@ -462,25 +515,39 @@ export function RsvpCarousel({
             : 'pt-2 sm:pt-5 pb-2'
         }`}
       >
-        <SteamingCup />
-        <h1 className="mt-1 text-2xl sm:text-4xl font-semibold tracking-tight text-[#f7ecdc] [text-wrap:balance]">
+        <div className="flex items-center justify-center gap-3">
+          <SteamingCup compact />
+          <button
+            type="button"
+            onClick={() => setPosterOpen(true)}
+            aria-label="Alpha Moms logo — tap to view event invite poster"
+            className="inline-flex shrink-0 items-center justify-center rounded-2xl border border-[#e4c29b]/80 bg-white px-3.5 py-1.5 shadow-[0_10px_28px_-8px_rgba(0,0,0,0.65)] transition-transform duration-200 hover:scale-[1.03] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
+          >
+            <img
+              src={alphaMomsLogo}
+              alt="Alpha Moms"
+              className="h-10 sm:h-11 w-auto object-contain"
+            />
+          </button>
+        </div>
+        <h1 className="mt-1.5 text-2xl sm:text-4xl font-semibold tracking-tight text-[#f7ecdc] [text-wrap:balance]">
           {eventSummary.settings.title} RSVP
         </h1>
-        <p className="mt-1.5 text-sm sm:text-base italic text-[#e9a9a0]">
+        <p className="mt-1 text-sm sm:text-base italic text-[#e9a9a0]">
           Mommy, let&apos;s make some coffee memories! 🤍
         </p>
-        <p className="mx-auto mt-2.5 max-w-xl text-xs sm:text-sm leading-relaxed text-[#d9b99b]/90 [text-wrap:balance]">
-          We&apos;re excited to have you join us for a morning of coffee,
-          conversations and an exclusive interaction with{' '}
-          <span className="font-medium text-[#f7ecdc]">
-            {eventSummary.settings.specialGuest}
+        <p className="mx-auto mt-2 max-w-xl text-xs sm:text-sm leading-relaxed text-[#d9b99b]/95 [text-wrap:balance]">
+          We are excited to have you join us for a{' '}
+          <span className="font-semibold tracking-wide text-[#f7ecdc]">
+            RENDEZVOUS WITH A {eventSummary.settings.specialGuest.toUpperCase()}
           </span>
-          .
         </p>
-        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-[#e4c29b]/85 tabular-nums">
+        <div className="mt-2.5 flex flex-wrap items-center justify-center gap-x-2.5 gap-y-1 text-xs text-[#e4c29b]/90 tabular-nums">
           <span>{eventSummary.settings.eventDate}</span>
           <span aria-hidden="true">·</span>
           <span>{eventSummary.settings.eventTime}</span>
+          <span aria-hidden="true">·</span>
+          <span>{eventSummary.settings.venueName}</span>
           <span aria-hidden="true">·</span>
           <span
             className={
@@ -505,32 +572,52 @@ export function RsvpCarousel({
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerEnd}
           onPointerCancel={handlePointerEnd}
-          onFocusCapture={() => setIsInputFocused(true)}
-          onBlurCapture={(e) => {
-            if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
-              setIsInputFocused(false);
+          onFocusCapture={(e) => {
+            const tag = (e.target as HTMLElement | null)?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA') {
+              if (blurTimerRef.current) {
+                window.clearTimeout(blurTimerRef.current);
+                blurTimerRef.current = null;
+              }
+              setIsInputFocused(true);
             }
+          }}
+          onBlurCapture={(e) => {
+            const tag = (e.target as HTMLElement | null)?.tagName;
+            if (tag !== 'INPUT' && tag !== 'TEXTAREA') return;
+            const nextTag = (e.relatedTarget as HTMLElement | null)?.tagName;
+            if (nextTag === 'INPUT' || nextTag === 'TEXTAREA') return;
+            if (blurTimerRef.current) {
+              window.clearTimeout(blurTimerRef.current);
+            }
+            blurTimerRef.current = window.setTimeout(() => {
+              const activeTag = document.activeElement?.tagName;
+              if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+                setIsInputFocused(false);
+              }
+              blurTimerRef.current = null;
+            }, 140);
           }}
           className={`carousel-stage relative w-full overflow-visible touch-pan-y select-none ${stageHeightClass}`}
           role="region"
           aria-roledescription="carousel"
           aria-label="Coffee Meet RSVP Questions"
         >
-          {/* Question 1: Mom's Name */}
+          {/* Question 1: Alpha Mom's Name */}
           <CoffeeSleeveCard
             offset={0 - currentStep}
             isReachable={0 <= maxReached}
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
             compact={isTypingMobile}
-            tag="Question 1 of 6"
+            tag="Question 1 of 7"
             onSelectSideCard={() => goToStep(0)}
           >
             <label
               htmlFor="rsvp-mom-name"
               className="block text-xl sm:text-2xl font-semibold leading-snug text-[#241209]"
             >
-              Mom&apos;s name
+              Alpha mom&apos;s name
             </label>
             <p className="mt-1 text-sm text-[#6b3f24]">
               So we know whose cup to write on!
@@ -563,6 +650,7 @@ export function RsvpCarousel({
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleNext({ keepKeyboard: true })}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#4a2a1a] px-5 py-2.5 text-sm font-medium text-[#f7ecdc] shadow-sm transition-transform active:scale-[0.98] hover:bg-[#381f12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
               >
@@ -579,7 +667,7 @@ export function RsvpCarousel({
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
             compact={isTypingMobile}
-            tag="Question 2 of 6"
+            tag="Question 2 of 7"
             onSelectSideCard={() => goToStep(1)}
           >
             <label
@@ -618,6 +706,7 @@ export function RsvpCarousel({
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleNext({ keepKeyboard: true })}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#4a2a1a] px-5 py-2.5 text-sm font-medium text-[#f7ecdc] shadow-sm transition-transform active:scale-[0.98] hover:bg-[#381f12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
               >
@@ -634,7 +723,7 @@ export function RsvpCarousel({
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
             compact={isTypingMobile}
-            tag="Question 3 of 6"
+            tag="Question 3 of 7"
             onSelectSideCard={() => goToStep(2)}
           >
             <label
@@ -678,6 +767,7 @@ export function RsvpCarousel({
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleNext({ keepKeyboard: false })}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#4a2a1a] px-5 py-2.5 text-sm font-medium text-[#f7ecdc] shadow-sm transition-transform active:scale-[0.98] hover:bg-[#381f12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
               >
@@ -694,7 +784,7 @@ export function RsvpCarousel({
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
             compact={isTypingMobile}
-            tag="Question 4 of 6"
+            tag="Question 4 of 7"
             onSelectSideCard={() => goToStep(3)}
           >
             <h2 className="text-xl sm:text-2xl font-semibold leading-snug text-[#241209]">
@@ -732,25 +822,89 @@ export function RsvpCarousel({
             )}
           </CoffeeSleeveCard>
 
-          {/* Question 5: Paediatrician Question */}
+          {/* Question 5: What would you like to ask the doctor? */}
           <CoffeeSleeveCard
             offset={4 - currentStep}
             isReachable={4 <= maxReached}
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
-            compact={isTypingMobile}
-            tag="Question 5 of 6"
+            compact={true}
+            tag="Question 5 of 7"
             onSelectSideCard={() => goToStep(4)}
+          >
+            <h2 className="text-lg sm:text-xl font-semibold leading-snug text-[#241209]">
+              What would you like to ask the doctor?
+            </h2>
+            <p className="mt-0.5 text-xs sm:text-sm text-[#6b3f24]">
+              Pick the theme you&apos;d love Dr. Pratyush to dive into.
+            </p>
+            <div
+              className="mt-3 space-y-2"
+              role="radiogroup"
+              aria-label="What would you like to ask the doctor?"
+            >
+              {DOCTOR_TOPIC_OPTIONS.map((option) => {
+                const selected = doctorTopic === option.value;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => handleSelectDoctorTopic(option.value)}
+                    className={`flex min-h-[46px] w-full items-start justify-between gap-2.5 rounded-xl border px-3.5 py-2.5 text-left transition-all active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b] ${
+                      selected
+                        ? 'border-[#4a2a1a] bg-[#4a2a1a] text-[#f7ecdc] shadow-sm'
+                        : 'border-[#c98a4b]/55 bg-white/80 text-[#241209] hover:border-[#4a2a1a]/60 hover:bg-white'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-[13.5px] sm:text-sm font-semibold leading-snug">
+                        <span className="mr-1.5" aria-hidden="true">
+                          {option.badge}
+                        </span>
+                        {option.title}
+                      </p>
+                      <p
+                        className={`mt-0.5 text-[11.5px] leading-snug ${
+                          selected ? 'text-[#f7ecdc]/85' : 'text-[#6b3f24]'
+                        }`}
+                      >
+                        {option.description}
+                      </p>
+                    </div>
+                    {selected && (
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#e9a9a0]" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            {currentStep === 4 && stepError && (
+              <p role="alert" className="mt-2 text-xs font-medium text-[#9f2c20]">
+                {stepError}
+              </p>
+            )}
+          </CoffeeSleeveCard>
+
+          {/* Question 6: 2am questions / constant worries */}
+          <CoffeeSleeveCard
+            offset={5 - currentStep}
+            isReachable={5 <= maxReached}
+            isDragging={isDragging}
+            dragShiftPx={dragShiftPx}
+            compact={isTypingMobile}
+            tag="Question 6 of 7"
+            onSelectSideCard={() => goToStep(5)}
           >
             <label
               htmlFor="rsvp-paediatrician-q"
               className="block text-lg sm:text-xl font-semibold leading-snug text-[#241209]"
             >
-              What&apos;s that ONE question you&apos;ve always wanted to ask a
-              paediatrician?
+              Help us with your 2am questions, your constant worries
             </label>
             <p className="mt-1 text-sm text-[#6b3f24]">
-              Optional — Dr. Pratyush Jain will address these during our chat.
+              (Dr. Pratyush can address these)
             </p>
             <textarea
               ref={questionInputRef}
@@ -764,15 +918,16 @@ export function RsvpCarousel({
                   handleNext({ keepKeyboard: false });
                 }
               }}
-              placeholder="Sleep schedules, picky eating, immunity, screen time..."
+              placeholder="Fever at midnight, picky eating, immunity, speech milestones..."
               className="mt-3.5 w-full resize-none rounded-xl border border-[#c98a4b]/55 bg-white/85 px-4 py-3 text-base text-[#241209] placeholder:text-[#8c5a3c]/60 focus:border-[#4a2a1a] focus:outline-none focus:ring-2 focus:ring-[#c98a4b]/40"
             />
             <div className="mt-4 flex items-center justify-between gap-3">
               <span className="text-xs text-[#7a4526]">
-                {paediatricianQuestion.trim() ? 'Press Next to continue' : 'You can skip this too'}
+                {paediatricianQuestion.trim() ? 'Press Next to continue' : 'Optional — you can skip too'}
               </span>
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleNext({ keepKeyboard: false })}
                 className="inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-[#4a2a1a] px-5 py-2.5 text-sm font-medium text-[#f7ecdc] shadow-sm transition-transform active:scale-[0.98] hover:bg-[#381f12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
               >
@@ -782,15 +937,15 @@ export function RsvpCarousel({
             </div>
           </CoffeeSleeveCard>
 
-          {/* Question 6: Coffee Order */}
+          {/* Question 7: Coffee Order */}
           <CoffeeSleeveCard
-            offset={5 - currentStep}
-            isReachable={5 <= maxReached}
+            offset={6 - currentStep}
+            isReachable={6 <= maxReached}
             isDragging={isDragging}
             dragShiftPx={dragShiftPx}
             compact={isTypingMobile}
-            tag="Question 6 of 6"
-            onSelectSideCard={() => goToStep(5)}
+            tag="Question 7 of 7"
+            onSelectSideCard={() => goToStep(6)}
           >
             <h2 className="text-xl sm:text-2xl font-semibold leading-snug text-[#241209]">
               Your coffee order?
@@ -843,6 +998,7 @@ export function RsvpCarousel({
                 />
                 <button
                   type="button"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleNext({ keepKeyboard: false })}
                   className="inline-flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-xl bg-[#4a2a1a] px-4 py-2.5 text-sm font-medium text-[#f7ecdc] hover:bg-[#381f12] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
                 >
@@ -852,14 +1008,14 @@ export function RsvpCarousel({
               </div>
             )}
 
-            {currentStep === 5 && stepError && (
+            {currentStep === 6 && stepError && (
               <p role="alert" className="mt-2.5 text-xs font-medium text-[#9f2c20]">
                 {stepError}
               </p>
             )}
           </CoffeeSleeveCard>
 
-          {/* Final Card (Index 6) */}
+          {/* Final Card (Index 7) */}
           <CoffeeSleeveCard
             offset={FINAL_STEP - currentStep}
             isReachable={FINAL_STEP <= maxReached}
@@ -870,15 +1026,29 @@ export function RsvpCarousel({
             onSelectSideCard={() => goToStep(FINAL_STEP)}
           >
             <div className="space-y-3.5">
-              <div>
-                <h2 className="text-xl sm:text-2xl font-semibold leading-tight text-[#241209] [text-wrap:balance]">
-                  {finalHeading}
-                </h2>
-                <p className="mt-1 text-xs text-[#6b3f24]">
-                  {eventSummary.isFull
-                    ? 'Seats full – join waitlist'
-                    : `Seats left: ${eventSummary.seatsLeft}`}
-                </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-semibold leading-tight text-[#241209] [text-wrap:balance]">
+                    {finalHeading}
+                  </h2>
+                  <p className="mt-1 text-xs text-[#6b3f24]">
+                    {eventSummary.isFull
+                      ? 'Seats full – join waitlist'
+                      : `Seats left: ${eventSummary.seatsLeft}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPosterOpen(true)}
+                  aria-label="Alpha Moms logo — view official event invite"
+                  className="shrink-0 rounded-xl p-1 transition-transform hover:scale-[1.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
+                >
+                  <img
+                    src={alphaMomsLogo}
+                    alt="Alpha Moms"
+                    className="h-10 sm:h-11 w-auto object-contain mix-blend-multiply"
+                  />
+                </button>
               </div>
 
               {/* Event Details */}
@@ -1128,6 +1298,37 @@ export function RsvpCarousel({
             Organizer Admin
           </button>
         </footer>
+      )}
+
+      {/* Full-Size Invite Poster Lightbox */}
+      {posterOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Alpha Moms Coffee Meet invite poster"
+          onClick={() => setPosterOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#120804]/85 p-4 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative max-h-[90dvh] w-full max-w-sm overflow-hidden rounded-3xl border border-[#e4c29b]/50 bg-[#241209] shadow-2xl"
+          >
+            <button
+              type="button"
+              onClick={() => setPosterOpen(false)}
+              aria-label="Close invite poster"
+              className="absolute right-3 top-3 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-[#241209]/80 text-[#f7ecdc] shadow-md hover:bg-[#4a2a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={EVENT_POSTER_URL}
+              alt="Alpha Moms – Coffee Meet official invite"
+              referrerPolicy="no-referrer"
+              className="max-h-[88dvh] w-full object-contain"
+            />
+          </div>
+        </div>
       )}
     </div>
   );

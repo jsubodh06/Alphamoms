@@ -88,6 +88,7 @@ export interface SubmitRsvpInput {
   childNameAge: string;
   phone: string;
   attending: string;
+  doctorTopic: string;
   paediatricianQuestion: string;
   coffeeOrder: string;
   mode?: 'create' | 'update';
@@ -135,6 +136,7 @@ export async function submitRsvpAtomic(input: SubmitRsvpInput) {
             momName: input.momName,
             childNameAge: input.childNameAge,
             attending: input.attending,
+            doctorTopic: input.doctorTopic,
             paediatricianQuestion: input.paediatricianQuestion,
             coffeeOrder: input.coffeeOrder,
             isWaitlist: nextWaitlist,
@@ -170,6 +172,7 @@ export async function submitRsvpAtomic(input: SubmitRsvpInput) {
           childNameAge: input.childNameAge,
           phone: input.phone,
           attending: input.attending,
+          doctorTopic: input.doctorTopic,
           paediatricianQuestion: input.paediatricianQuestion,
           coffeeOrder: input.coffeeOrder,
           isWaitlist: isFull,
@@ -215,6 +218,7 @@ export async function updateRsvpAdmin(
     childNameAge: string;
     phone: string;
     attending: string;
+    doctorTopic: string;
     paediatricianQuestion: string;
     coffeeOrder: string;
     isWaitlist: boolean;
@@ -229,6 +233,7 @@ export async function updateRsvpAdmin(
           childNameAge: fields.childNameAge,
           phone: fields.phone,
           attending: fields.attending,
+          doctorTopic: fields.doctorTopic,
           paediatricianQuestion: fields.paediatricianQuestion,
           coffeeOrder: fields.coffeeOrder,
           isWaitlist: fields.isWaitlist,
@@ -262,6 +267,7 @@ export async function bulkImportRsvpsAdmin(
     childNameAge: string;
     phone: string;
     attending: string;
+    doctorTopic: string;
     paediatricianQuestion: string;
     coffeeOrder: string;
     isWaitlist?: boolean;
@@ -300,6 +306,7 @@ export async function bulkImportRsvpsAdmin(
               momName: item.momName,
               childNameAge: item.childNameAge,
               attending: item.attending,
+              doctorTopic: item.doctorTopic,
               paediatricianQuestion: item.paediatricianQuestion,
               coffeeOrder: item.coffeeOrder,
             })
@@ -315,6 +322,7 @@ export async function bulkImportRsvpsAdmin(
             childNameAge: item.childNameAge,
             phone: item.phone,
             attending: item.attending,
+            doctorTopic: item.doctorTopic,
             paediatricianQuestion: item.paediatricianQuestion,
             coffeeOrder: item.coffeeOrder,
             isWaitlist: shouldWaitlist,

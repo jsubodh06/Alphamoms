@@ -41,6 +41,7 @@ async function forwardToGoogleSheets(rsvp: {
   childNameAge: string;
   phone: string;
   attending: string;
+  doctorTopic: string;
   paediatricianQuestion: string;
   coffeeOrder: string;
   isWaitlist: boolean;
@@ -58,6 +59,7 @@ async function forwardToGoogleSheets(rsvp: {
         child_name_age: rsvp.childNameAge,
         phone: rsvp.phone,
         attending: rsvp.isWaitlist ? `${rsvp.attending} (Waitlist)` : rsvp.attending,
+        doctor_topic: rsvp.doctorTopic,
         paediatrician_question: rsvp.paediatricianQuestion,
         coffee_order: rsvp.coffeeOrder,
       }),
@@ -75,6 +77,8 @@ function validateRsvpBody(body: Record<string, unknown>) {
   const phone = normalizeIndianPhone(rawPhone);
   const attending =
     typeof body.attending === 'string' ? body.attending.trim() : '';
+  const doctorTopic =
+    typeof body.doctorTopic === 'string' ? body.doctorTopic.trim() : '';
   const paediatricianQuestion =
     typeof body.paediatricianQuestion === 'string'
       ? body.paediatricianQuestion.trim()
@@ -83,7 +87,7 @@ function validateRsvpBody(body: Record<string, unknown>) {
     typeof body.coffeeOrder === 'string' ? body.coffeeOrder.trim() : '';
 
   if (momName.length < 2 || momName.length > 120) {
-    return { error: "Please enter Mom's name (at least 2 characters)." };
+    return { error: "Please enter Alpha mom's name (at least 2 characters)." };
   }
   if (childNameAge.length < 2 || childNameAge.length > 120) {
     return { error: "Please enter your child's name and age." };
@@ -98,6 +102,9 @@ function validateRsvpBody(body: Record<string, unknown>) {
   ) {
     return { error: 'Please select whether you will be attending.' };
   }
+  if (doctorTopic.length > 200) {
+    return { error: 'Selected topic is too long.' };
+  }
   if (paediatricianQuestion.length > 1000) {
     return { error: 'Your question must be under 1,000 characters.' };
   }
@@ -111,6 +118,7 @@ function validateRsvpBody(body: Record<string, unknown>) {
       childNameAge,
       phone,
       attending,
+      doctorTopic,
       paediatricianQuestion,
       coffeeOrder,
     },
@@ -262,6 +270,8 @@ app.patch('/api/admin/rsvps/:id', requireAdmin, async (req, res) => {
   );
   const attending =
     typeof body.attending === 'string' ? body.attending.trim() : '';
+  const doctorTopic =
+    typeof body.doctorTopic === 'string' ? body.doctorTopic.trim() : '';
   const paediatricianQuestion =
     typeof body.paediatricianQuestion === 'string'
       ? body.paediatricianQuestion.trim()
@@ -288,6 +298,7 @@ app.patch('/api/admin/rsvps/:id', requireAdmin, async (req, res) => {
       childNameAge,
       phone,
       attending,
+      doctorTopic,
       paediatricianQuestion,
       coffeeOrder,
       isWaitlist,
@@ -332,6 +343,7 @@ app.post('/api/admin/rsvps/import', requireAdmin, async (req, res) => {
     childNameAge: string;
     phone: string;
     attending: string;
+    doctorTopic: string;
     paediatricianQuestion: string;
     coffeeOrder: string;
     isWaitlist?: boolean;
@@ -352,6 +364,8 @@ app.post('/api/admin/rsvps/import', requireAdmin, async (req, res) => {
       typeof raw.attending === 'string' && raw.attending.trim()
         ? raw.attending.trim()
         : ATTENDING_OPTIONS[0];
+    const doctorTopic =
+      typeof raw.doctorTopic === 'string' ? raw.doctorTopic.trim() : '';
     const paediatricianQuestion =
       typeof raw.paediatricianQuestion === 'string'
         ? raw.paediatricianQuestion.trim()
@@ -364,7 +378,7 @@ app.post('/api/admin/rsvps/import', requireAdmin, async (req, res) => {
     if (!momName || !childNameAge || !/^\d{10}$/.test(phone)) {
       skipped.push({
         row: idx + 1,
-        reason: 'Missing mom name, child details, or valid 10-digit phone',
+        reason: "Missing Alpha mom's name, child details, or valid 10-digit phone",
       });
       return;
     }
@@ -374,6 +388,7 @@ app.post('/api/admin/rsvps/import', requireAdmin, async (req, res) => {
       childNameAge,
       phone,
       attending: attending.replace(/\s*\(Waitlist\)\s*$/i, ''),
+      doctorTopic,
       paediatricianQuestion,
       coffeeOrder,
       isWaitlist: /\(Waitlist\)/i.test(attending) ? true : undefined,

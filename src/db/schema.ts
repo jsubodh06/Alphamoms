@@ -17,23 +17,17 @@ export const users = pgTable('users', {
 export const eventSettings = pgTable('event_settings', {
   id: serial('id').primaryKey(),
   title: text('title').notNull().default('Alpha Moms – Coffee Meet'),
-  eventDate: text('event_date').notNull().default('Saturday, 28 November 2026'),
-  eventTime: text('event_time').notNull().default('10:30 AM – 12:30 PM'),
-  startIso: text('start_iso').notNull().default('2026-11-28T10:30:00'),
-  endIso: text('end_iso').notNull().default('2026-11-28T12:30:00'),
-  venueName: text('venue_name')
-    .notNull()
-    .default('Blue Tokai Coffee Roasters, Khan Market'),
-  venueAddress: text('venue_address')
-    .notNull()
-    .default('Middle Lane, Khan Market, New Delhi 110003'),
+  eventDate: text('event_date').notNull().default('Monday, 30th Nov 2026'),
+  eventTime: text('event_time').notNull().default('9:30 – 12 noon'),
+  startIso: text('start_iso').notNull().default('2026-11-30T09:30:00'),
+  endIso: text('end_iso').notNull().default('2026-11-30T12:00:00'),
+  venueName: text('venue_name').notNull().default('At Bunglow No. 6'),
+  venueAddress: text('venue_address').notNull().default('Indore'),
   mapsUrl: text('maps_url')
     .notNull()
-    .default(
-      'https://maps.google.com/?q=Blue+Tokai+Coffee+Roasters+Khan+Market+New+Delhi',
-    ),
+    .default('https://maps.google.com/?q=Bunglow+No.+6+Indore'),
   specialGuest: text('special_guest').notNull().default('Dr. Pratyush Jain'),
-  rsvpByDate: text('rsvp_by_date').notNull().default('25 November 2026'),
+  rsvpByDate: text('rsvp_by_date').notNull().default('28th Nov 2026'),
   seatLimit: integer('seat_limit').notNull().default(25),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -45,6 +39,7 @@ export const rsvps = pgTable('rsvps', {
   childNameAge: text('child_name_age').notNull(),
   phone: text('phone').notNull().unique(),
   attending: text('attending').notNull(),
+  doctorTopic: text('doctor_topic').notNull().default(''),
   paediatricianQuestion: text('paediatrician_question').notNull().default(''),
   coffeeOrder: text('coffee_order').notNull(),
   isWaitlist: boolean('is_waitlist').notNull().default(false),

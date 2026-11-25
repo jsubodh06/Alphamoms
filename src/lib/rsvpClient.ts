@@ -11,6 +11,7 @@ export interface RsvpRecord {
   childNameAge: string;
   phone: string;
   attending: string;
+  doctorTopic: string;
   paediatricianQuestion: string;
   coffeeOrder: string;
   isWaitlist: boolean;
@@ -25,7 +26,7 @@ export interface EventSummaryResponse {
 }
 
 const LS_RSVPS_KEY = 'alpha_moms_rsvps_v1';
-const LS_SETTINGS_KEY = 'alpha_moms_settings_v1';
+const LS_SETTINGS_KEY = 'alpha_moms_settings_v2';
 const SS_STATIC_ADMIN_KEY = 'alpha_moms_static_admin_v1';
 
 // One-way SHA-256 digests for zero-backend static deployments
@@ -134,6 +135,7 @@ async function pushToClientGoogleSheet(rsvp: RsvpRecord) {
         child_name_age: rsvp.childNameAge,
         phone: rsvp.phone,
         attending: rsvp.isWaitlist ? `${rsvp.attending} (Waitlist)` : rsvp.attending,
+        doctor_topic: rsvp.doctorTopic,
         paediatrician_question: rsvp.paediatricianQuestion,
         coffee_order: rsvp.coffeeOrder,
       }),
@@ -158,6 +160,7 @@ export async function submitPublicRsvp(payload: {
   childNameAge: string;
   phone: string;
   attending: string;
+  doctorTopic: string;
   paediatricianQuestion: string;
   coffeeOrder: string;
   mode: 'create' | 'update';
@@ -180,6 +183,7 @@ export async function submitPublicRsvp(payload: {
         childNameAge: payload.childNameAge,
         phone: payload.phone,
         attending: payload.attending,
+        doctorTopic: payload.doctorTopic,
         paediatricianQuestion: payload.paediatricianQuestion,
         coffeeOrder: payload.coffeeOrder,
         joinWaitlist: payload.joinWaitlist,
@@ -226,6 +230,7 @@ export async function submitPublicRsvp(payload: {
       momName: payload.momName,
       childNameAge: payload.childNameAge,
       attending: payload.attending,
+      doctorTopic: payload.doctorTopic,
       paediatricianQuestion: payload.paediatricianQuestion,
       coffeeOrder: payload.coffeeOrder,
       isWaitlist: !canClaimSeat,
@@ -259,6 +264,7 @@ export async function submitPublicRsvp(payload: {
     childNameAge: payload.childNameAge,
     phone,
     attending: payload.attending,
+    doctorTopic: payload.doctorTopic,
     paediatricianQuestion: payload.paediatricianQuestion,
     coffeeOrder: payload.coffeeOrder,
     isWaitlist: isFull,
@@ -516,6 +522,7 @@ export async function bulkImportAdminRsvps(
     childNameAge: string;
     phone: string;
     attending: string;
+    doctorTopic: string;
     paediatricianQuestion: string;
     coffeeOrder: string;
   }>,
@@ -565,7 +572,7 @@ export async function bulkImportAdminRsvps(
     if (!raw.momName || !raw.childNameAge || !/^\d{10}$/.test(phone)) {
       skipped.push({
         row: idx + 1,
-        reason: 'Missing mom name, child details, or valid 10-digit phone',
+        reason: "Missing Alpha mom's name, child details, or valid 10-digit phone",
       });
       return;
     }
@@ -581,6 +588,7 @@ export async function bulkImportAdminRsvps(
         momName: raw.momName,
         childNameAge: raw.childNameAge,
         attending: cleanAttending,
+        doctorTopic: raw.doctorTopic,
         paediatricianQuestion: raw.paediatricianQuestion,
         coffeeOrder: raw.coffeeOrder || 'Cappuccino',
       };
@@ -594,6 +602,7 @@ export async function bulkImportAdminRsvps(
         childNameAge: raw.childNameAge,
         phone,
         attending: cleanAttending,
+        doctorTopic: raw.doctorTopic,
         paediatricianQuestion: raw.paediatricianQuestion,
         coffeeOrder: raw.coffeeOrder || 'Cappuccino',
         isWaitlist: waitlisted,

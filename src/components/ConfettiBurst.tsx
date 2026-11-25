@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 
 interface Particle {
   id: number;
@@ -12,29 +13,29 @@ interface Particle {
   size: string;
 }
 
-const PARTICLES: Particle[] = Array.from({ length: 18 }, (_, i) => {
+const PARTICLES: Particle[] = Array.from({ length: 20 }, (_, i) => {
   const isCoffee = i % 2 === 0;
   const spread = ((i % 7) - 3) * 34;
   return {
     id: i,
     emoji: isCoffee ? '☕' : '🤍',
-    left: `${8 + ((i * 5.1) % 84)}%`,
+    left: `${8 + ((i * 4.7) % 84)}%`,
     cx: `${spread}px`,
-    cy: `${170 + (i % 5) * 38}px`,
+    cy: `${200 + (i % 5) * 44}px`,
     crot: `${(i % 2 === 0 ? 1 : -1) * (120 + i * 18)}deg`,
     cdur: `${1.8 + (i % 4) * 0.3}s`,
     cdelay: `${(i % 6) * 0.08}s`,
-    size: i % 3 === 0 ? '20px' : '16px',
+    size: i % 3 === 0 ? '22px' : '17px',
   };
 });
 
 export function ConfettiBurst({ burstKey }: { burstKey: number }) {
-  if (burstKey <= 0) return null;
+  if (burstKey <= 0 || typeof document === 'undefined') return null;
 
-  return (
+  return createPortal(
     <div
       key={burstKey}
-      className="pointer-events-none fixed inset-x-0 top-14 z-40 mx-auto h-64 max-w-md overflow-hidden"
+      className="pointer-events-none fixed inset-x-0 top-12 z-[9998] mx-auto h-80 max-w-md overflow-hidden"
       aria-hidden="true"
     >
       {PARTICLES.map((p) => {
@@ -55,6 +56,7 @@ export function ConfettiBurst({ burstKey }: { burstKey: number }) {
           </span>
         );
       })}
-    </div>
+    </div>,
+    document.body,
   );
 }

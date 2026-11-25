@@ -15,8 +15,10 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
+import alphaMomsLogo from '../assets/alpha-moms-logo.png';
 import {
   ATTENDING_OPTIONS,
+  DOCTOR_TOPIC_OPTIONS,
   type EventConfig,
 } from '../config/eventConfig';
 import { auth, googleAuthProvider } from '../lib/firebase';
@@ -39,6 +41,7 @@ interface AdminRsvp {
   childNameAge: string;
   phone: string;
   attending: string;
+  doctorTopic: string;
   paediatricianQuestion: string;
   coffeeOrder: string;
   isWaitlist: boolean;
@@ -248,6 +251,7 @@ export function AdminDashboard({
         row.momName.toLowerCase().includes(q) ||
         row.childNameAge.toLowerCase().includes(q) ||
         row.phone.toLowerCase().includes(q) ||
+        (row.doctorTopic || '').toLowerCase().includes(q) ||
         row.paediatricianQuestion.toLowerCase().includes(q) ||
         row.coffeeOrder.toLowerCase().includes(q)
       );
@@ -257,11 +261,12 @@ export function AdminDashboard({
   const handleExportExcel = () => {
     const headers = [
       'Date',
-      "Mom's Name",
+      "Alpha Mom's Name",
       "Child's Name & Age",
       'Contact Number',
       'Attending',
-      'Question for Paediatrician',
+      'Topic for Doctor',
+      '2am Questions / Worries',
       'Coffee Order',
     ];
 
@@ -277,6 +282,7 @@ export function AdminDashboard({
       r.childNameAge,
       r.phone,
       r.isWaitlist ? `${r.attending} (Waitlist)` : r.attending,
+      r.doctorTopic || '—',
       r.paediatricianQuestion || '—',
       r.coffeeOrder,
     ]);
@@ -286,11 +292,12 @@ export function AdminDashboard({
     // Set column widths
     worksheet['!cols'] = [
       { wch: 20 }, // Date
-      { wch: 22 }, // Mom's Name
+      { wch: 22 }, // Alpha Mom's Name
       { wch: 22 }, // Child's Name & Age
       { wch: 16 }, // Contact Number
       { wch: 28 }, // Attending
-      { wch: 46 }, // Question for Paediatrician
+      { wch: 34 }, // Topic for Doctor
+      { wch: 46 }, // 2am Questions / Worries
       { wch: 20 }, // Coffee Order
     ];
 
@@ -317,13 +324,15 @@ export function AdminDashboard({
       }
     }
 
-    // Wrap text on Question for Paediatrician (column index 5)
+    // Wrap text on Topic for Doctor (col 5) and 2am Questions (col 6)
     for (let row = 1; row <= filteredRsvps.length; row++) {
-      const qRef = XLSX.utils.encode_cell({ r: row, c: 5 });
-      if (worksheet[qRef]) {
-        worksheet[qRef].s = {
-          alignment: { wrapText: true, vertical: 'top' },
-        };
+      for (const col of [5, 6]) {
+        const ref = XLSX.utils.encode_cell({ r: row, c: col });
+        if (worksheet[ref]) {
+          worksheet[ref].s = {
+            alignment: { wrapText: true, vertical: 'top' },
+          };
+        }
       }
     }
 
@@ -370,7 +379,14 @@ export function AdminDashboard({
       };
 
       const mappedRows = rawObjects.map((obj) => ({
-        momName: pickField(obj, ["mom's name", 'mom name', 'mom_name', 'name']),
+        momName: pickField(obj, [
+          "alpha mom's name",
+          'alpha mom name',
+          "mom's name",
+          'mom name',
+          'mom_name',
+          'name',
+        ]),
         childNameAge: pickField(obj, [
           "child's name & age",
           'child name & age',
@@ -384,7 +400,15 @@ export function AdminDashboard({
           'phone number',
         ]),
         attending: pickField(obj, ['attending', 'status']),
+        doctorTopic: pickField(obj, [
+          'topic for doctor',
+          'doctor topic',
+          'doctor_topic',
+          'topic',
+          'what would you like to ask the doctor?',
+        ]),
         paediatricianQuestion: pickField(obj, [
+          '2am questions / worries',
           'question for paediatrician',
           'paediatrician question',
           'paediatrician_question',
@@ -430,6 +454,7 @@ export function AdminDashboard({
           childNameAge: editingRow.childNameAge,
           phone: editingRow.phone,
           attending: editingRow.attending,
+          doctorTopic: editingRow.doctorTopic || '',
           paediatricianQuestion: editingRow.paediatricianQuestion,
           coffeeOrder: editingRow.coffeeOrder,
           isWaitlist: editingRow.isWaitlist,
@@ -511,12 +536,21 @@ export function AdminDashboard({
               <span>Back to RSVP Form</span>
             </button>
 
-            <h1 className="text-2xl font-semibold text-[#241209]">
-              Organizer Admin
-            </h1>
-            <p className="mt-1 text-sm text-[#6b3f24]">
-              Sign in to manage Alpha Moms RSVPs, seats, and Excel exports.
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-semibold text-[#241209]">
+                  Organizer Admin
+                </h1>
+                <p className="mt-1 text-sm text-[#6b3f24]">
+                  Sign in to manage Alpha Moms RSVPs, seats, and Excel exports.
+                </p>
+              </div>
+              <img
+                src={alphaMomsLogo}
+                alt="Alpha Moms"
+                className="h-11 w-auto shrink-0 object-contain mix-blend-multiply"
+              />
+            </div>
 
             <form onSubmit={handleCredentialsLogin} className="mt-5 space-y-3.5">
               <div>
@@ -600,9 +634,16 @@ export function AdminDashboard({
           <button
             type="button"
             onClick={() => setActiveTab('rsvps')}
-            className="text-lg font-semibold tracking-tight text-[#f7ecdc] whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-2.5 text-lg font-semibold tracking-tight text-[#f7ecdc] whitespace-nowrap shrink-0"
           >
-            Alpha Moms Admin
+            <span className="inline-flex items-center rounded-lg bg-white px-2 py-0.5 shadow-sm">
+              <img
+                src={alphaMomsLogo}
+                alt="Alpha Moms"
+                className="h-6 w-auto object-contain"
+              />
+            </span>
+            <span>Admin</span>
           </button>
 
           <nav className="flex items-center gap-4 sm:gap-6 text-sm">
@@ -768,7 +809,7 @@ export function AdminDashboard({
                     type="search"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search mom, child, phone, question, coffee…"
+                    placeholder="Search alpha mom, child, phone, topic, question, coffee…"
                     className="w-full rounded-xl border border-[#d9b99b]/25 bg-[#1b0d06]/70 py-2.5 pl-9 pr-3.5 text-sm text-[#f7ecdc] placeholder:text-[#d9b99b]/45 focus:border-[#c98a4b] focus:outline-none"
                   />
                 </div>
@@ -844,11 +885,12 @@ export function AdminDashboard({
                       <thead>
                         <tr className="border-b border-[#d9b99b]/20 bg-[#190c05] text-xs font-medium text-[#e4c29b]">
                           <th className="px-4 py-3">Date</th>
-                          <th className="px-4 py-3">Mom&apos;s Name</th>
+                          <th className="px-4 py-3">Alpha Mom&apos;s Name</th>
                           <th className="px-4 py-3">Child&apos;s Name &amp; Age</th>
                           <th className="px-4 py-3">Contact</th>
                           <th className="px-4 py-3">Attending</th>
-                          <th className="px-4 py-3">Question for Paediatrician</th>
+                          <th className="px-4 py-3">Topic for Doctor</th>
+                          <th className="px-4 py-3">2am Questions / Worries</th>
                           <th className="px-4 py-3">Coffee Order</th>
                           <th className="px-4 py-3 text-right">Actions</th>
                         </tr>
@@ -884,6 +926,9 @@ export function AdminDashboard({
                                   · Waitlist
                                 </span>
                               )}
+                            </td>
+                            <td className="max-w-[210px] px-4 py-3 text-xs text-[#e4c29b] break-words">
+                              {row.doctorTopic || '—'}
                             </td>
                             <td className="max-w-xs px-4 py-3 text-xs text-[#d9b99b] break-words">
                               {row.paediatricianQuestion || '—'}
@@ -989,9 +1034,14 @@ export function AdminDashboard({
                             {row.coffeeOrder}
                           </span>
                         </p>
+                        {row.doctorTopic && (
+                          <p className="text-xs text-[#e4c29b]">
+                            Topic: {row.doctorTopic}
+                          </p>
+                        )}
                         {row.paediatricianQuestion && (
                           <p className="text-xs text-[#d9b99b]/85 leading-relaxed">
-                            Q: {row.paediatricianQuestion}
+                            2am Q: {row.paediatricianQuestion}
                           </p>
                         )}
                       </div>
@@ -1254,7 +1304,7 @@ export function AdminDashboard({
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
                   <label className="block text-xs font-medium text-[#4a2a1a]">
-                    Mom&apos;s Name
+                    Alpha Mom&apos;s Name
                   </label>
                   <input
                     type="text"
@@ -1337,7 +1387,35 @@ export function AdminDashboard({
 
               <div>
                 <label className="block text-xs font-medium text-[#4a2a1a]">
-                  Question for Paediatrician
+                  Topic for Doctor
+                </label>
+                <select
+                  value={editingRow.doctorTopic || ''}
+                  onChange={(e) =>
+                    setEditingRow({ ...editingRow, doctorTopic: e.target.value })
+                  }
+                  className="mt-1 w-full rounded-xl border border-[#c98a4b]/60 bg-white/90 px-3 py-2 text-base"
+                >
+                  <option value="">Not specified</option>
+                  {DOCTOR_TOPIC_OPTIONS.map((opt) => (
+                    <option key={opt.id} value={opt.value}>
+                      {opt.value}
+                    </option>
+                  ))}
+                  {editingRow.doctorTopic &&
+                    !DOCTOR_TOPIC_OPTIONS.some(
+                      (opt) => opt.value === editingRow.doctorTopic,
+                    ) && (
+                      <option value={editingRow.doctorTopic}>
+                        {editingRow.doctorTopic}
+                      </option>
+                    )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-[#4a2a1a]">
+                  2am Questions / Constant Worries
                 </label>
                 <textarea
                   rows={3}
