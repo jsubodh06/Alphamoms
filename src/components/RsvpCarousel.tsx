@@ -26,6 +26,7 @@ import {
   type EventConfig,
 } from '../config/eventConfig';
 import { fetchPublicEvent, submitPublicRsvp } from '../lib/rsvpClient';
+import { CoffeePourIntro } from './CoffeePourIntro';
 import { CoffeeSleeveCard } from './CoffeeSleeveCard';
 import { ConfettiBurst } from './ConfettiBurst';
 import { RsvpConfetti, type ConfettiVariant } from './RsvpConfetti';
@@ -57,6 +58,7 @@ export function RsvpCarousel({
     isFull: false,
   });
 
+  const [hasStarted, setHasStarted] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [maxReached, setMaxReached] = useState(0);
 
@@ -287,6 +289,7 @@ export function RsvpCarousel({
         }
         return;
       }
+      if (!hasStarted) return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       if (e.key === 'ArrowLeft') {
@@ -303,7 +306,7 @@ export function RsvpCarousel({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [currentStep, goToStep, handleBack, handleNext, maxReached, posterOpen]);
+  }, [currentStep, goToStep, handleBack, handleNext, hasStarted, maxReached, posterOpen]);
 
   const handleSelectAttending = (option: string) => {
     setAttending(option);
@@ -496,10 +499,54 @@ export function RsvpCarousel({
         ? 'h-[550px] sm:h-[565px]'
         : 'h-[355px] sm:h-[385px]';
 
+  const posterModal = posterOpen ? (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Alpha Moms Coffee Meet invite poster"
+      onClick={() => setPosterOpen(false)}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#120804]/85 p-4 backdrop-blur-sm"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative max-h-[90dvh] w-full max-w-sm overflow-hidden rounded-3xl border border-[#e4c29b]/50 bg-[#241209] shadow-2xl"
+      >
+        <button
+          type="button"
+          onClick={() => setPosterOpen(false)}
+          aria-label="Close invite poster"
+          className="absolute right-3 top-3 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-[#241209]/80 text-[#f7ecdc] shadow-md hover:bg-[#4a2a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
+        >
+          <X className="h-5 w-5" />
+        </button>
+        <img
+          src={EVENT_POSTER_URL}
+          alt="Alpha Moms – Coffee Meet official invite"
+          referrerPolicy="no-referrer"
+          className="max-h-[88dvh] w-full object-contain"
+        />
+      </div>
+    </div>
+  ) : null;
+
+  if (!hasStarted) {
+    return (
+      <>
+        <CoffeePourIntro
+          eventSummary={eventSummary}
+          onStartRsvp={() => setHasStarted(true)}
+          onOpenPoster={() => setPosterOpen(true)}
+          onOpenAdmin={onOpenAdmin}
+        />
+        {posterModal}
+      </>
+    );
+  }
+
   return (
     <div
       style={viewportHeight ? { minHeight: `${viewportHeight}px` } : undefined}
-      className="relative z-10 flex min-h-[100dvh] flex-col justify-between px-4 pt-safe pb-safe transition-[min-height] duration-150"
+      className="carousel-reveal relative z-10 flex min-h-[100dvh] flex-col justify-between px-4 pt-safe pb-safe transition-[min-height] duration-150"
     >
       <ConfettiBurst burstKey={confettiKey} />
       <RsvpConfetti
@@ -1301,35 +1348,7 @@ export function RsvpCarousel({
       )}
 
       {/* Full-Size Invite Poster Lightbox */}
-      {posterOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Alpha Moms Coffee Meet invite poster"
-          onClick={() => setPosterOpen(false)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#120804]/85 p-4 backdrop-blur-sm"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="relative max-h-[90dvh] w-full max-w-sm overflow-hidden rounded-3xl border border-[#e4c29b]/50 bg-[#241209] shadow-2xl"
-          >
-            <button
-              type="button"
-              onClick={() => setPosterOpen(false)}
-              aria-label="Close invite poster"
-              className="absolute right-3 top-3 z-10 flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-[#241209]/80 text-[#f7ecdc] shadow-md hover:bg-[#4a2a1a] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#c98a4b]"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <img
-              src={EVENT_POSTER_URL}
-              alt="Alpha Moms – Coffee Meet official invite"
-              referrerPolicy="no-referrer"
-              className="max-h-[88dvh] w-full object-contain"
-            />
-          </div>
-        </div>
-      )}
+      {posterModal}
     </div>
   );
 }

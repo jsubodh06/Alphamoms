@@ -161,13 +161,209 @@
   padding-bottom: max(14px, env(safe-area-inset-bottom));
 }
 
+/* Home-page Coffee Pour Intro Animations */
+@keyframes coffeeStreamPour {
+  0% {
+    transform: scaleY(0);
+    transform-origin: 50% 0%;
+    opacity: 0;
+  }
+  8% {
+    transform: scaleY(1);
+    transform-origin: 50% 0%;
+    opacity: 0.95;
+  }
+  64% {
+    transform: scaleY(1);
+    transform-origin: 50% 100%;
+    opacity: 0.95;
+  }
+  76% {
+    transform: scaleY(0);
+    transform-origin: 50% 100%;
+    opacity: 0;
+  }
+  100% {
+    transform: scaleY(0);
+    transform-origin: 50% 100%;
+    opacity: 0;
+  }
+}
+
+@keyframes coffeeLiquidRise {
+  0%,
+  8% {
+    transform: translate3d(0, 68px, 0);
+  }
+  70% {
+    transform: translate3d(0, 0px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0px, 0);
+  }
+}
+
+@keyframes coffeeSurfaceWave {
+  0%,
+  100% {
+    transform: translate3d(-4px, 0, 0);
+  }
+  50% {
+    transform: translate3d(4px, 0, 0);
+  }
+}
+
+@keyframes coffeeSplashPop {
+  0%,
+  16% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0) scale(0.4);
+  }
+  28% {
+    opacity: 0.9;
+    transform: translate3d(var(--drop-x, -8px), -10px, 0) scale(1);
+  }
+  44% {
+    opacity: 0;
+    transform: translate3d(var(--drop-x2, -14px), 4px, 0) scale(0.5);
+  }
+  54% {
+    opacity: 0.85;
+    transform: translate3d(var(--drop-x, -8px), -8px, 0) scale(0.95);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: translate3d(var(--drop-x2, -14px), 6px, 0) scale(0.4);
+  }
+}
+
+@keyframes latteHeartBloom {
+  0%,
+  66% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  84% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pourSteamFadeIn {
+  0%,
+  60% {
+    opacity: 0;
+  }
+  88%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes aromaRingExpand {
+  0% {
+    transform: scale(0.84);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.28;
+  }
+  100% {
+    transform: scale(1.22);
+    opacity: 0;
+  }
+}
+
+@keyframes carouselReveal {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.coffee-pour-stream {
+  transform-box: fill-box;
+  will-change: transform, opacity;
+  animation: coffeeStreamPour 2.35s cubic-bezier(0.32, 0.08, 0.24, 1) forwards;
+}
+
+.coffee-liquid-rise {
+  will-change: transform;
+  animation: coffeeLiquidRise 2.35s cubic-bezier(0.22, 0.85, 0.32, 1) forwards;
+}
+
+.coffee-surface-wave {
+  animation: coffeeSurfaceWave 1.4s ease-in-out infinite;
+}
+
+.coffee-splash-drop {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: coffeeSplashPop 2.35s ease-out forwards;
+}
+
+.latte-heart-bloom {
+  transform-box: fill-box;
+  transform-origin: center;
+  will-change: transform, opacity;
+  animation: latteHeartBloom 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.pour-steam-reveal {
+  animation: pourSteamFadeIn 2.35s ease-out forwards;
+}
+
+.aroma-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: aromaRingExpand 3.4s ease-out 1.6s infinite;
+}
+
+.carousel-reveal {
+  animation: carouselReveal 0.48s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .steam-wisp-1,
   .steam-wisp-2,
   .steam-wisp-3,
   .drifting-bean,
-  .confetti-emoji {
+  .confetti-emoji,
+  .coffee-pour-stream,
+  .coffee-liquid-rise,
+  .coffee-surface-wave,
+  .coffee-splash-drop,
+  .latte-heart-bloom,
+  .pour-steam-reveal,
+  .aroma-ring,
+  .carousel-reveal {
     animation: none !important;
+  }
+
+  .coffee-pour-stream,
+  .coffee-splash-drop,
+  .aroma-ring {
+    opacity: 0 !important;
+  }
+
+  .coffee-liquid-rise {
+    transform: translate3d(0, 0, 0) !important;
+  }
+
+  .latte-heart-bloom,
+  .pour-steam-reveal {
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .drifting-bean {
