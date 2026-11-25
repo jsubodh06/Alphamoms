@@ -78,7 +78,15 @@ function readLocalSettings(): EventConfig {
   try {
     const raw = localStorage.getItem(LS_SETTINGS_KEY);
     if (!raw) return DEFAULT_EVENT_CONFIG;
-    return { ...DEFAULT_EVENT_CONFIG, ...(JSON.parse(raw) as Partial<EventConfig>) };
+    const merged = {
+      ...DEFAULT_EVENT_CONFIG,
+      ...(JSON.parse(raw) as Partial<EventConfig>),
+    };
+    return {
+      ...merged,
+      venueName: merged.venueName.replace(/bunglow/gi, 'Bungalow'),
+      mapsUrl: merged.mapsUrl.replace(/bunglow/gi, 'Bungalow'),
+    };
   } catch {
     return DEFAULT_EVENT_CONFIG;
   }

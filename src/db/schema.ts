@@ -21,11 +21,11 @@ export const eventSettings = pgTable('event_settings', {
   eventTime: text('event_time').notNull().default('9:30 – 12 noon'),
   startIso: text('start_iso').notNull().default('2026-11-30T09:30:00'),
   endIso: text('end_iso').notNull().default('2026-11-30T12:00:00'),
-  venueName: text('venue_name').notNull().default('At Bunglow No. 6'),
+  venueName: text('venue_name').notNull().default('At Bungalow No. 6'),
   venueAddress: text('venue_address').notNull().default('Indore'),
   mapsUrl: text('maps_url')
     .notNull()
-    .default('https://maps.google.com/?q=Bunglow+No.+6+Indore'),
+    .default('https://maps.google.com/?q=Bungalow+No.+6+Indore'),
   specialGuest: text('special_guest').notNull().default('Dr. Pratyush Jain'),
   rsvpByDate: text('rsvp_by_date').notNull().default('28th Nov 2026'),
   seatLimit: integer('seat_limit').notNull().default(25),
