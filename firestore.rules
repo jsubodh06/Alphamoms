@@ -1,0 +1,226 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Global Hardened Primitives
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidHashId(id) {
+      return id is string && id.size() == 64 && id.matches('^[a-f0-9]{64}$');
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        request.auth.token.email == 'subodhjain2007777@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation Blueprints (Synchronized with firebase-blueprint.json)
+    // -------------------------------------------------------------------------
+    function isValidEventMeta(data) {
+      return data.keys().hasAll([
+        'title', 'eventDate', 'eventTime', 'startIso', 'endIso',
+        'venueName', 'venueAddress', 'mapsUrl', 'specialGuest',
+        'rsvpByDate', 'seatLimit', 'confirmedCount', 'waitlistCount', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'title', 'eventDate', 'eventTime', 'startIso', 'endIso',
+        'venueName', 'venueAddress', 'mapsUrl', 'specialGuest',
+        'rsvpByDate', 'seatLimit', 'confirmedCount', 'waitlistCount', 'updatedAt'
+      ])
+      && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+      && data.eventDate is string && data.eventDate.size() >= 1 && data.eventDate.size() <= 80
+      && data.eventTime is string && data.eventTime.size() >= 1 && data.eventTime.size() <= 80
+      && data.startIso is string && data.startIso.size() >= 1 && data.startIso.size() <= 40
+      && data.endIso is string && data.endIso.size() >= 1 && data.endIso.size() <= 40
+      && data.venueName is string && data.venueName.size() >= 1 && data.venueName.size() <= 120
+      && data.venueAddress is string && data.venueAddress.size() >= 1 && data.venueAddress.size() <= 180
+      && data.mapsUrl is string && data.mapsUrl.size() >= 1 && data.mapsUrl.size() <= 300
+      && data.specialGuest is string && data.specialGuest.size() >= 1 && data.specialGuest.size() <= 120
+      && data.rsvpByDate is string && data.rsvpByDate.size() >= 1 && data.rsvpByDate.size() <= 80
+      && data.seatLimit is int && data.seatLimit >= 1 && data.seatLimit <= 1000
+      && data.confirmedCount is int && data.confirmedCount >= 0 && data.confirmedCount <= 10000
+      && data.waitlistCount is int && data.waitlistCount >= 0 && data.waitlistCount <= 10000
+      && data.updatedAt is timestamp;
+    }
+
+    function isPublicSeatIncrement() {
+      return incoming().diff(existing()).affectedKeys().hasOnly(['confirmedCount', 'waitlistCount', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && (
+          (
+            incoming().confirmedCount == existing().confirmedCount + 1
+            && existing().confirmedCount < existing().seatLimit
+            && incoming().waitlistCount == existing().waitlistCount
+          ) || (
+            incoming().waitlistCount == existing().waitlistCount + 1
+            && incoming().confirmedCount == existing().confirmedCount
+          )
+        );
+    }
+
+    function isValidRsvpLock(data) {
+      return data.keys().hasAll(['status', 'updatedAt'])
+        && data.keys().hasOnly(['status', 'updatedAt'])
+        && data.status is string
+        && (data.status == 'confirmed' || data.status == 'waitlisted')
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidRsvp(data) {
+      return data.keys().hasAll([
+        'momName', 'childNameAge', 'phone', 'attending',
+        'doctorTopic', 'paediatricianQuestion', 'coffeeOrder',
+        'isWaitlist', 'createdAt', 'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'momName', 'childNameAge', 'phone', 'attending',
+        'doctorTopic', 'paediatricianQuestion', 'coffeeOrder',
+        'isWaitlist', 'createdAt', 'updatedAt'
+      ])
+      && data.momName is string && data.momName.size() >= 2 && data.momName.size() <= 120
+      && data.childNameAge is string && data.childNameAge.size() >= 2 && data.childNameAge.size() <= 120
+      && data.phone is string && data.phone.size() == 10 && data.phone.matches('^[0-9]{10}$')
+      && data.attending is string && data.attending.size() >= 1 && data.attending.size() <= 80
+      && data.doctorTopic is string && data.doctorTopic.size() <= 160
+      && data.paediatricianQuestion is string && data.paediatricianQuestion.size() <= 1500
+      && data.coffeeOrder is string && data.coffeeOrder.size() >= 1 && data.coffeeOrder.size() <= 120
+      && data.isWaitlist is bool
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isPublicRsvpSelfUpdate() {
+      return incoming().diff(existing()).affectedKeys().hasOnly([
+        'momName', 'childNameAge', 'attending', 'doctorTopic',
+        'paediatricianQuestion', 'coffeeOrder', 'updatedAt'
+      ])
+      && incoming().phone == existing().phone
+      && incoming().isWaitlist == existing().isWaitlist
+      && incoming().createdAt == existing().createdAt
+      && incoming().updatedAt == request.time;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /event_meta/{docId} (Public event details & seat counters)
+    // -------------------------------------------------------------------------
+    match /event_meta/{docId} {
+      allow get: if isValidId(docId) && docId == 'current';
+      allow list: if false;
+
+      allow create: if isValidId(docId)
+        && docId == 'current'
+        && isValidEventMeta(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() || (
+            incoming().seatLimit == 25
+            && (
+              (incoming().confirmedCount == 1 && incoming().waitlistCount == 0) ||
+              (incoming().confirmedCount == 0 && incoming().waitlistCount == 1)
+            )
+          )
+        );
+
+      allow update: if isValidId(docId)
+        && docId == 'current'
+        && isValidEventMeta(incoming())
+        && incoming().updatedAt == request.time
+        && (isAdmin() || isPublicSeatIncrement());
+
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /rsvp_locks/{phoneHash} (PII-free duplicate check markers)
+    // -------------------------------------------------------------------------
+    match /rsvp_locks/{phoneHash} {
+      allow get: if isValidHashId(phoneHash);
+      allow list: if false;
+
+      allow create: if isValidHashId(phoneHash)
+        && isValidRsvpLock(incoming())
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/rsvps/$(phoneHash));
+
+      allow update: if isValidHashId(phoneHash)
+        && isValidRsvpLock(incoming())
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() || (
+            incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
+            && incoming().status == existing().status
+          )
+        );
+
+      allow delete: if isValidHashId(phoneHash) && isAdmin();
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /rsvps/{phoneHash} (Private guest PII — Admin read/list only)
+    // -------------------------------------------------------------------------
+    match /rsvps/{phoneHash} {
+      allow get: if isValidHashId(phoneHash) && isAdmin();
+      allow list: if isAdmin();
+
+      allow create: if isValidHashId(phoneHash)
+        && isValidRsvp(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          existsAfter(/databases/$(database)/documents/rsvp_locks/$(phoneHash))
+        );
+
+      allow update: if isValidHashId(phoneHash)
+        && isValidRsvp(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly([
+            'momName', 'childNameAge', 'phone', 'attending', 'doctorTopic',
+            'paediatricianQuestion', 'coffeeOrder', 'isWaitlist', 'updatedAt'
+          ])) ||
+          isPublicRsvpSelfUpdate()
+        );
+
+      allow delete: if isValidHashId(phoneHash) && isAdmin();
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection: /admins/{uid} (Organizer role registry)
+    // -------------------------------------------------------------------------
+    match /admins/{uid} {
+      allow get: if isVerifiedUser() && isValidId(uid) && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+  }
+}

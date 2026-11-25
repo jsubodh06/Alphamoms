@@ -23,19 +23,19 @@ import {
 } from '../config/eventConfig';
 import { auth, googleAuthProvider } from '../lib/firebase';
 import {
+  ALLOWED_ADMIN_EMAIL,
   bulkImportAdminRsvps,
   checkAdminSessionClient,
   deleteAdminRsvp,
   fetchAdminRsvps,
-  loginAdminWithCredentials,
   logoutAdminClient,
   updateAdminEventSettings,
   updateAdminRsvp,
-  verifyAdminGoogleToken,
+  verifyAdminGoogleUser,
 } from '../lib/rsvpClient';
 
 interface AdminRsvp {
-  id: number;
+  id: string;
   createdAt: string;
   momName: string;
   childNameAge: string;
@@ -63,14 +63,10 @@ export function AdminDashboard({
 }: {
   onBackToRsvp: () => void;
 }) {
-  const [authToken, setAuthToken] = useState<string | null>(null);
   const [adminEmail, setAdminEmail] = useState<string | null>(null);
-  const [storageMode, setStorageMode] = useState<'backend' | 'static'>('backend');
   const [checkingSession, setCheckingSession] = useState(true);
 
-  // Login form state
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  // Login state
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
 
@@ -89,8 +85,8 @@ export function AdminDashboard({
   // Edit modal & delete confirmation
   const [editingRow, setEditingRow] = useState<AdminRsvp | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Settings form
   const [settingsForm, setSettingsForm] = useState<EventConfig | null>(null);
@@ -98,38 +94,32 @@ export function AdminDashboard({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchAdminData = useCallback(
-    async (overrideToken?: string) => {
-      setLoadingData(true);
-      setDataError(null);
-      try {
-        const tokenToUse = overrideToken ?? authToken;
-        const data = await fetchAdminRsvps(tokenToUse);
-        if (data.unauthorized) {
-          setAdminEmail(null);
-          setAuthToken(null);
-          return;
-        }
-        setRsvps(data.rsvps);
-        setSummary(data.summary);
-        setSettingsForm(data.summary.settings);
-      } catch (err: unknown) {
-        setDataError(
-          err instanceof Error ? err.message : 'Failed to fetch dashboard data.',
-        );
-      } finally {
-        setLoadingData(false);
+  const fetchAdminData = useCallback(async () => {
+    setLoadingData(true);
+    setDataError(null);
+    try {
+      const data = await fetchAdminRsvps();
+      if (data.unauthorized) {
+        setAdminEmail(null);
+        return;
       }
-    },
-    [authToken],
-  );
+      setRsvps(data.rsvps);
+      setSummary(data.summary);
+      setSettingsForm(data.summary.settings);
+    } catch (err: unknown) {
+      setDataError(
+        err instanceof Error ? err.message : 'Failed to fetch dashboard data.',
+      );
+    } finally {
+      setLoadingData(false);
+    }
+  }, []);
 
   // Check existing session on mount
   useEffect(() => {
     const checkSession = async () => {
       try {
         const session = await checkAdminSessionClient();
-        setStorageMode(session.mode);
         if (session.authenticated && session.email) {
           setAdminEmail(session.email);
           await fetchAdminData();
@@ -143,42 +133,13 @@ export function AdminDashboard({
     void checkSession();
   }, [fetchAdminData]);
 
-  const handleCredentialsLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (loggingIn) return;
-    setLoggingIn(true);
-    setLoginError(null);
-    try {
-      const result = await loginAdminWithCredentials(username, password);
-      setStorageMode(result.mode);
-      if (!result.ok || !result.token) {
-        setLoginError(result.error || 'Invalid credentials.');
-        return;
-      }
-      setAuthToken(result.token);
-      setAdminEmail(result.email || username.trim());
-      setPassword('');
-      await fetchAdminData(result.token);
-    } catch {
-      setLoginError('Unable to sign in right now. Please try again.');
-    } finally {
-      setLoggingIn(false);
-    }
-  };
-
   const handleGoogleLogin = async () => {
     if (loggingIn) return;
     setLoggingIn(true);
     setLoginError(null);
     try {
       const cred = await signInWithPopup(auth, googleAuthProvider);
-      const idToken = await cred.user.getIdToken();
-      const verified = await verifyAdminGoogleToken(
-        idToken,
-        cred.user.email,
-        cred.user.emailVerified,
-      );
-      setStorageMode(verified.mode);
+      const verified = await verifyAdminGoogleUser(cred.user);
       if (!verified.ok) {
         await signOut(auth);
         setLoginError(
@@ -186,13 +147,25 @@ export function AdminDashboard({
         );
         return;
       }
-      setAuthToken(idToken);
       setAdminEmail(verified.email || cred.user.email || 'Admin');
-      await fetchAdminData(idToken);
+      await fetchAdminData();
     } catch (err: unknown) {
-      setLoginError(
-        err instanceof Error ? err.message : 'Google sign-in was cancelled.',
-      );
+      const authCode =
+        typeof err === 'object' && err !== null && 'code' in err
+          ? String((err as { code?: unknown }).code)
+          : '';
+      if (authCode === 'auth/unauthorized-domain') {
+        const host = window.location.hostname;
+        setLoginError(
+          `Add "${host}" under Firebase Console → Authentication → Settings → Authorized domains (console.firebase.google.com/project/substantial-medium-b2w8r/authentication/settings) to enable Admin sign-in on this domain.`,
+        );
+      } else if (authCode === 'auth/popup-closed-by-user') {
+        setLoginError('Google sign-in popup was closed. Please try again.');
+      } else {
+        setLoginError(
+          err instanceof Error ? err.message : 'Google sign-in was cancelled.',
+        );
+      }
     } finally {
       setLoggingIn(false);
     }
@@ -201,7 +174,6 @@ export function AdminDashboard({
   const handleLogout = async () => {
     await logoutAdminClient();
     await signOut(auth).catch(() => undefined);
-    setAuthToken(null);
     setAdminEmail(null);
     setRsvps([]);
   };
@@ -422,7 +394,7 @@ export function AdminDashboard({
         ]),
       }));
 
-      const result = await bulkImportAdminRsvps(mappedRows, authToken);
+      const result = await bulkImportAdminRsvps(mappedRows);
 
       const skippedMsg =
         result.skipped && result.skipped.length > 0
@@ -447,20 +419,16 @@ export function AdminDashboard({
     setSavingEdit(true);
     setDataError(null);
     try {
-      await updateAdminRsvp(
-        editingRow.id,
-        {
-          momName: editingRow.momName,
-          childNameAge: editingRow.childNameAge,
-          phone: editingRow.phone,
-          attending: editingRow.attending,
-          doctorTopic: editingRow.doctorTopic || '',
-          paediatricianQuestion: editingRow.paediatricianQuestion,
-          coffeeOrder: editingRow.coffeeOrder,
-          isWaitlist: editingRow.isWaitlist,
-        },
-        authToken,
-      );
+      await updateAdminRsvp(editingRow.id, {
+        momName: editingRow.momName,
+        childNameAge: editingRow.childNameAge,
+        phone: editingRow.phone,
+        attending: editingRow.attending,
+        doctorTopic: editingRow.doctorTopic || '',
+        paediatricianQuestion: editingRow.paediatricianQuestion,
+        coffeeOrder: editingRow.coffeeOrder,
+        isWaitlist: editingRow.isWaitlist,
+      });
       setEditingRow(null);
       setStatusNotice('RSVP updated.');
       await fetchAdminData();
@@ -473,12 +441,12 @@ export function AdminDashboard({
     }
   };
 
-  const handleDeleteRow = async (id: number) => {
+  const handleDeleteRow = async (id: string) => {
     if (deletingId !== null) return;
     setDeletingId(id);
     setDataError(null);
     try {
-      await deleteAdminRsvp(id, authToken);
+      await deleteAdminRsvp(id);
       setConfirmDeleteId(null);
       setStatusNotice('RSVP removed.');
       await fetchAdminData();
@@ -498,7 +466,7 @@ export function AdminDashboard({
     setDataError(null);
     setStatusNotice(null);
     try {
-      const updated = await updateAdminEventSettings(settingsForm, authToken);
+      const updated = await updateAdminEventSettings(settingsForm);
       setSettingsForm(updated);
       setStatusNotice('Event settings updated.');
       await fetchAdminData();
@@ -552,74 +520,32 @@ export function AdminDashboard({
               />
             </div>
 
-            <form onSubmit={handleCredentialsLogin} className="mt-5 space-y-3.5">
-              <div>
-                <label
-                  htmlFor="admin-username"
-                  className="block text-xs font-medium text-[#4a2a1a]"
-                >
-                  Username or Email
-                </label>
-                <input
-                  id="admin-username"
-                  type="text"
-                  autoComplete="username"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username or email"
-                  className="mt-1 w-full rounded-xl border border-[#c98a4b]/60 bg-white/90 px-3.5 py-2.5 text-base text-[#241209] focus:border-[#4a2a1a] focus:outline-none focus:ring-2 focus:ring-[#c98a4b]/35"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="admin-password"
-                  className="block text-xs font-medium text-[#4a2a1a]"
-                >
-                  Password
-                </label>
-                <input
-                  id="admin-password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  className="mt-1 w-full rounded-xl border border-[#c98a4b]/60 bg-white/90 px-3.5 py-2.5 text-base text-[#241209] focus:border-[#4a2a1a] focus:outline-none focus:ring-2 focus:ring-[#c98a4b]/35"
-                />
-              </div>
-
+            <div className="mt-6 space-y-4">
               {loginError && (
-                <p role="alert" className="text-xs font-medium text-[#9f2c20]">
+                <p
+                  role="alert"
+                  className="rounded-xl border border-[#9f2c20]/30 bg-[#9f2c20]/10 px-3.5 py-2.5 text-xs leading-relaxed font-medium text-[#9f2c20] break-words"
+                >
                   {loginError}
                 </p>
               )}
 
               <button
-                type="submit"
+                type="button"
                 disabled={loggingIn}
-                className="flex min-h-[46px] w-full items-center justify-center rounded-xl bg-[#4a2a1a] px-4 py-2.5 text-sm font-semibold text-[#f7ecdc] hover:bg-[#361c10] disabled:opacity-60"
+                onClick={handleGoogleLogin}
+                className="flex min-h-[48px] w-full items-center justify-center gap-2.5 rounded-xl bg-[#4a2a1a] px-4 py-3 text-sm font-semibold text-[#f7ecdc] hover:bg-[#361c10] disabled:opacity-60 transition-colors"
               >
-                {loggingIn ? 'Signing in…' : 'Sign in'}
+                <span>{loggingIn ? 'Signing in…' : 'Sign in with Google'}</span>
               </button>
-            </form>
 
-            <div className="my-4 flex items-center gap-3 text-xs text-[#7a4526]">
-              <span className="h-px flex-1 bg-[#c98a4b]/35" />
-              <span>or</span>
-              <span className="h-px flex-1 bg-[#c98a4b]/35" />
+              <p className="text-center text-xs text-[#6b3f24]">
+                Authorized organizer account:{' '}
+                <span className="font-medium text-[#4a2a1a]">
+                  {ALLOWED_ADMIN_EMAIL}
+                </span>
+              </p>
             </div>
-
-            <button
-              type="button"
-              disabled={loggingIn}
-              onClick={handleGoogleLogin}
-              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-[#c98a4b]/65 bg-white/85 px-4 py-2.5 text-sm font-medium text-[#241209] hover:bg-white"
-            >
-              <span>Sign in with Google</span>
-            </button>
           </div>
         </div>
       </div>
@@ -693,21 +619,6 @@ export function AdminDashboard({
       </header>
 
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 space-y-6">
-        {storageMode === 'static' && (
-          <div className="rounded-xl border border-[#c98a4b]/35 bg-[#2e180d]/90 px-4 py-3 text-xs sm:text-sm text-[#e4c29b]">
-            Running in static browser mode (no shared backend connected). RSVPs
-            are saved on this browser; set{' '}
-            <span className="font-mono-tabular text-[#f7ecdc]">
-              VITE_API_BASE_URL
-            </span>{' '}
-            or{' '}
-            <span className="font-mono-tabular text-[#f7ecdc]">
-              VITE_GOOGLE_SHEETS_WEBHOOK_URL
-            </span>{' '}
-            in Vercel to collect RSVPs across devices.
-          </div>
-        )}
-
         {statusNotice && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-[#c98a4b]/45 bg-[#361d10] px-4 py-3 text-sm text-[#f7ecdc]">
             <span>{statusNotice}</span>

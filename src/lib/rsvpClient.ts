@@ -1,11 +1,32 @@
+import { onAuthStateChanged, signOut, type User } from 'firebase/auth';
 import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  writeBatch,
+} from 'firebase/firestore';
+import {
+  ATTENDING_OPTIONS,
   DEFAULT_EVENT_CONFIG,
   normalizeIndianPhone,
   type EventConfig,
 } from '../config/eventConfig';
+import {
+  auth,
+  firestore,
+  handleFirestoreError,
+  OperationType,
+} from './firebase';
 
 export interface RsvpRecord {
-  id: number;
+  id: string;
   createdAt: string;
   momName: string;
   childNameAge: string;
@@ -25,45 +46,29 @@ export interface EventSummaryResponse {
   isFull: boolean;
 }
 
-const LS_RSVPS_KEY = 'alpha_moms_rsvps_v1';
-const LS_SETTINGS_KEY = 'alpha_moms_settings_v2';
-const SS_STATIC_ADMIN_KEY = 'alpha_moms_static_admin_v1';
-
-// One-way SHA-256 digests for zero-backend static deployments
-const ADMIN_USER_SHA256_LIST = [
-  '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918',
-  'dae49dccad25363eaa9570911e1ec0f326d71f1b4df28c248edeb8316e5afb91',
-];
-const ADMIN_PASS_SHA256 =
-  '41b5f0f06f63cc6fd4fefbad9c76574772c416a4f32fd61b7473103ab508e0a1';
 export const ALLOWED_ADMIN_EMAIL = 'subodhjain2007777@gmail.com';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(
-  /\/+$/,
-  '',
-) || '';
+const EVENT_META_COLLECTION = 'event_meta';
+const EVENT_META_DOC_ID = 'current';
+const RSVPS_COLLECTION = 'rsvps';
+const RSVP_LOCKS_COLLECTION = 'rsvp_locks';
 
-let cachedBackendAvailable: boolean | null = null;
-
-export async function isBackendAvailable(): Promise<boolean> {
-  if (cachedBackendAvailable !== null) return cachedBackendAvailable;
-  try {
-    const res = await fetch(`${API_BASE}/api/health`, {
-      method: 'GET',
-      credentials: API_BASE ? 'omit' : 'include',
-    });
-    const contentType = res.headers.get('content-type') || '';
-    if (!res.ok || !contentType.includes('application/json')) {
-      cachedBackendAvailable = false;
-      return false;
-    }
-    const data = (await res.json()) as { ok?: boolean };
-    cachedBackendAvailable = Boolean(data?.ok);
-    return cachedBackendAvailable;
-  } catch {
-    cachedBackendAvailable = false;
-    return false;
+class DuplicatePhoneError extends Error {
+  constructor() {
+    super("You've already RSVP'd – want to update?");
+    this.name = 'DuplicatePhoneError';
   }
+}
+
+class SeatsFullError extends Error {
+  constructor() {
+    super('Seats full – join waitlist');
+    this.name = 'SeatsFullError';
+  }
+}
+
+function sanitizeText(value: string, maxLength: number): string {
+  return value.trim().slice(0, maxLength);
 }
 
 async function sha256Hex(value: string): Promise<string> {
@@ -74,49 +79,84 @@ async function sha256Hex(value: string): Promise<string> {
     .join('');
 }
 
-function readLocalSettings(): EventConfig {
-  try {
-    const raw = localStorage.getItem(LS_SETTINGS_KEY);
-    if (!raw) return DEFAULT_EVENT_CONFIG;
-    const merged = {
-      ...DEFAULT_EVENT_CONFIG,
-      ...(JSON.parse(raw) as Partial<EventConfig>),
-    };
+function timestampToIso(value: unknown): string {
+  if (value instanceof Timestamp) {
+    return value.toDate().toISOString();
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return new Date().toISOString();
+}
+
+function mapEventMetaDoc(data: Record<string, unknown> | undefined): EventSummaryResponse {
+  if (!data) {
     return {
-      ...merged,
-      venueName: merged.venueName.replace(/bunglow/gi, 'Bungalow'),
-      mapsUrl: merged.mapsUrl.replace(/bunglow/gi, 'Bungalow'),
+      settings: { ...DEFAULT_EVENT_CONFIG },
+      confirmedCount: 0,
+      waitlistCount: 0,
+      seatsLeft: DEFAULT_EVENT_CONFIG.seatLimit,
+      isFull: false,
     };
-  } catch {
-    return DEFAULT_EVENT_CONFIG;
   }
-}
 
-function writeLocalSettings(settings: EventConfig) {
-  localStorage.setItem(LS_SETTINGS_KEY, JSON.stringify(settings));
-}
+  const settings: EventConfig = {
+    title:
+      typeof data.title === 'string' && data.title.trim()
+        ? data.title
+        : DEFAULT_EVENT_CONFIG.title,
+    eventDate:
+      typeof data.eventDate === 'string' && data.eventDate.trim()
+        ? data.eventDate
+        : DEFAULT_EVENT_CONFIG.eventDate,
+    eventTime:
+      typeof data.eventTime === 'string' && data.eventTime.trim()
+        ? data.eventTime
+        : DEFAULT_EVENT_CONFIG.eventTime,
+    startIso:
+      typeof data.startIso === 'string' && data.startIso.trim()
+        ? data.startIso
+        : DEFAULT_EVENT_CONFIG.startIso,
+    endIso:
+      typeof data.endIso === 'string' && data.endIso.trim()
+        ? data.endIso
+        : DEFAULT_EVENT_CONFIG.endIso,
+    venueName:
+      typeof data.venueName === 'string' && data.venueName.trim()
+        ? data.venueName
+        : DEFAULT_EVENT_CONFIG.venueName,
+    venueAddress:
+      typeof data.venueAddress === 'string' && data.venueAddress.trim()
+        ? data.venueAddress
+        : DEFAULT_EVENT_CONFIG.venueAddress,
+    mapsUrl:
+      typeof data.mapsUrl === 'string' && data.mapsUrl.trim()
+        ? data.mapsUrl
+        : DEFAULT_EVENT_CONFIG.mapsUrl,
+    specialGuest:
+      typeof data.specialGuest === 'string' && data.specialGuest.trim()
+        ? data.specialGuest
+        : DEFAULT_EVENT_CONFIG.specialGuest,
+    rsvpByDate:
+      typeof data.rsvpByDate === 'string' && data.rsvpByDate.trim()
+        ? data.rsvpByDate
+        : DEFAULT_EVENT_CONFIG.rsvpByDate,
+    seatLimit:
+      typeof data.seatLimit === 'number' && Number.isInteger(data.seatLimit) && data.seatLimit >= 1
+        ? data.seatLimit
+        : DEFAULT_EVENT_CONFIG.seatLimit,
+  };
 
-function readLocalRsvps(): RsvpRecord[] {
-  try {
-    const raw = localStorage.getItem(LS_RSVPS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as RsvpRecord[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeLocalRsvps(rows: RsvpRecord[]) {
-  localStorage.setItem(LS_RSVPS_KEY, JSON.stringify(rows));
-}
-
-function buildLocalSummary(): EventSummaryResponse {
-  const settings = readLocalSettings();
-  const rows = readLocalRsvps();
-  const confirmedCount = rows.filter((r) => !r.isWaitlist).length;
-  const waitlistCount = rows.filter((r) => r.isWaitlist).length;
+  const confirmedCount =
+    typeof data.confirmedCount === 'number' && data.confirmedCount >= 0
+      ? data.confirmedCount
+      : 0;
+  const waitlistCount =
+    typeof data.waitlistCount === 'number' && data.waitlistCount >= 0
+      ? data.waitlistCount
+      : 0;
   const seatsLeft = Math.max(0, settings.seatLimit - confirmedCount);
+
   return {
     settings,
     confirmedCount,
@@ -124,6 +164,39 @@ function buildLocalSummary(): EventSummaryResponse {
     seatsLeft,
     isFull: seatsLeft <= 0,
   };
+}
+
+function mapRsvpDoc(id: string, data: Record<string, unknown>): RsvpRecord {
+  return {
+    id,
+    createdAt: timestampToIso(data.createdAt),
+    momName: typeof data.momName === 'string' ? data.momName : '',
+    childNameAge: typeof data.childNameAge === 'string' ? data.childNameAge : '',
+    phone: typeof data.phone === 'string' ? data.phone : '',
+    attending:
+      typeof data.attending === 'string' ? data.attending : ATTENDING_OPTIONS[0],
+    doctorTopic: typeof data.doctorTopic === 'string' ? data.doctorTopic : '',
+    paediatricianQuestion:
+      typeof data.paediatricianQuestion === 'string'
+        ? data.paediatricianQuestion
+        : '',
+    coffeeOrder: typeof data.coffeeOrder === 'string' ? data.coffeeOrder : '',
+    isWaitlist: Boolean(data.isWaitlist),
+  };
+}
+
+function isAuthorizedAdminUser(user: User | null): boolean {
+  if (!user || !user.email || !user.emailVerified) return false;
+  return user.email.toLowerCase() === ALLOWED_ADMIN_EMAIL.toLowerCase();
+}
+
+function waitForAuthReady(): Promise<User | null> {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe();
+      resolve(user);
+    });
+  });
 }
 
 async function pushToClientGoogleSheet(rsvp: RsvpRecord) {
@@ -142,25 +215,27 @@ async function pushToClientGoogleSheet(rsvp: RsvpRecord) {
         mom_name: rsvp.momName,
         child_name_age: rsvp.childNameAge,
         phone: rsvp.phone,
-        attending: rsvp.isWaitlist ? `${rsvp.attending} (Waitlist)` : rsvp.attending,
+        attending: rsvp.isWaitlist
+          ? `${rsvp.attending} (Waitlist)`
+          : rsvp.attending,
         doctor_topic: rsvp.doctorTopic,
         paediatrician_question: rsvp.paediatricianQuestion,
         coffee_order: rsvp.coffeeOrder,
       }),
     });
   } catch {
-    // Non-blocking
+    // Non-blocking optional backup
   }
 }
 
 export async function fetchPublicEvent(): Promise<EventSummaryResponse> {
-  if (await isBackendAvailable()) {
-    const res = await fetch(`${API_BASE}/api/event`);
-    if (res.ok) {
-      return (await res.json()) as EventSummaryResponse;
-    }
+  const path = `${EVENT_META_COLLECTION}/${EVENT_META_DOC_ID}`;
+  try {
+    const snap = await getDoc(doc(firestore, EVENT_META_COLLECTION, EVENT_META_DOC_ID));
+    return mapEventMetaDoc(snap.exists() ? snap.data() : undefined);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
   }
-  return buildLocalSummary();
 }
 
 export async function submitPublicRsvp(payload: {
@@ -181,45 +256,62 @@ export async function submitPublicRsvp(payload: {
   status?: 'confirmed' | 'updated' | 'waitlisted';
   rsvp?: RsvpRecord;
 }> {
-  if (await isBackendAvailable()) {
-    const method = payload.mode === 'update' ? 'PUT' : 'POST';
-    const res = await fetch(`${API_BASE}/api/rsvps`, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        momName: payload.momName,
-        childNameAge: payload.childNameAge,
-        phone: payload.phone,
-        attending: payload.attending,
-        doctorTopic: payload.doctorTopic,
-        paediatricianQuestion: payload.paediatricianQuestion,
-        coffeeOrder: payload.coffeeOrder,
-        joinWaitlist: payload.joinWaitlist,
-      }),
-    });
-    const data = (await res.json()) as {
-      code?: string;
-      error?: string;
-      status?: 'confirmed' | 'updated' | 'waitlisted';
-      rsvp?: RsvpRecord;
-    };
+  const phone = normalizeIndianPhone(payload.phone);
+  if (!/^[0-9]{10}$/.test(phone)) {
     return {
-      ok: res.ok,
-      statusCode: res.status,
-      code: data.code,
-      error: data.error,
-      status: data.status,
-      rsvp: data.rsvp,
+      ok: false,
+      statusCode: 400,
+      error: 'Please enter a valid 10-digit mobile number.',
     };
   }
 
-  // Zero-backend static mode
-  const phone = normalizeIndianPhone(payload.phone);
-  const rows = readLocalRsvps();
-  const settings = readLocalSettings();
-  const existingIdx = rows.findIndex((r) => r.phone === phone);
+  const momName = sanitizeText(payload.momName, 120);
+  const childNameAge = sanitizeText(payload.childNameAge, 120);
+  const attending = sanitizeText(payload.attending, 80);
+  const doctorTopic = sanitizeText(payload.doctorTopic || '', 160);
+  const paediatricianQuestion = sanitizeText(payload.paediatricianQuestion || '', 1500);
+  const coffeeOrder = sanitizeText(payload.coffeeOrder, 120);
 
-  if (existingIdx !== -1 && payload.mode !== 'update') {
+  if (momName.length < 2) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: "Please enter Alpha mom's name (at least 2 characters).",
+    };
+  }
+  if (childNameAge.length < 2) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: 'Please enter your child’s name & age.',
+    };
+  }
+  if (!attending || !coffeeOrder) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error: 'Please complete all required fields.',
+    };
+  }
+
+  const phoneHash = await sha256Hex(phone);
+  const lockRef = doc(firestore, RSVP_LOCKS_COLLECTION, phoneHash);
+  const rsvpRef = doc(firestore, RSVPS_COLLECTION, phoneHash);
+  const metaRef = doc(firestore, EVENT_META_COLLECTION, EVENT_META_DOC_ID);
+
+  // Check PII-free lock document first
+  let existingLockSnap;
+  try {
+    existingLockSnap = await getDoc(lockRef);
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.GET,
+      `${RSVP_LOCKS_COLLECTION}/${phoneHash}`,
+    );
+  }
+
+  if (existingLockSnap.exists() && payload.mode !== 'update') {
     return {
       ok: false,
       statusCode: 409,
@@ -228,304 +320,415 @@ export async function submitPublicRsvp(payload: {
     };
   }
 
-  const confirmedCount = rows.filter((r) => !r.isWaitlist).length;
+  // Self-update path for returning guest
+  if (existingLockSnap.exists() && payload.mode === 'update') {
+    const lockData = existingLockSnap.data();
+    const isWaitlist = lockData.status === 'waitlisted';
 
-  if (existingIdx !== -1 && payload.mode === 'update') {
-    const existing = rows[existingIdx];
-    const canClaimSeat = !existing.isWaitlist || confirmedCount < settings.seatLimit;
-    const updated: RsvpRecord = {
-      ...existing,
-      momName: payload.momName,
-      childNameAge: payload.childNameAge,
-      attending: payload.attending,
-      doctorTopic: payload.doctorTopic,
-      paediatricianQuestion: payload.paediatricianQuestion,
-      coffeeOrder: payload.coffeeOrder,
-      isWaitlist: !canClaimSeat,
+    try {
+      const batch = writeBatch(firestore);
+      batch.update(rsvpRef, {
+        momName,
+        childNameAge,
+        attending,
+        doctorTopic,
+        paediatricianQuestion,
+        coffeeOrder,
+        updatedAt: serverTimestamp(),
+      });
+      batch.update(lockRef, {
+        updatedAt: serverTimestamp(),
+      });
+      await batch.commit();
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.UPDATE,
+        `${RSVPS_COLLECTION}/${phoneHash}`,
+      );
+    }
+
+    const updatedRecord: RsvpRecord = {
+      id: phoneHash,
+      createdAt: new Date().toISOString(),
+      momName,
+      childNameAge,
+      phone,
+      attending,
+      doctorTopic,
+      paediatricianQuestion,
+      coffeeOrder,
+      isWaitlist,
     };
-    rows[existingIdx] = updated;
-    writeLocalRsvps(rows);
-    void pushToClientGoogleSheet(updated);
+    void pushToClientGoogleSheet(updatedRecord);
+
     return {
       ok: true,
       statusCode: 200,
-      status: updated.isWaitlist ? 'waitlisted' : 'updated',
-      rsvp: updated,
+      status: isWaitlist ? 'waitlisted' : 'updated',
+      rsvp: updatedRecord,
     };
   }
 
-  const isFull = confirmedCount >= settings.seatLimit;
-  if (isFull && !payload.joinWaitlist) {
+  // Atomic creation path (enforces seat limit & duplicate prevention together)
+  try {
+    const result = await runTransaction(firestore, async (tx) => {
+      const [metaSnap, lockSnap] = await Promise.all([
+        tx.get(metaRef),
+        tx.get(lockRef),
+      ]);
+
+      if (lockSnap.exists()) {
+        throw new DuplicatePhoneError();
+      }
+
+      const currentMeta = mapEventMetaDoc(
+        metaSnap.exists() ? metaSnap.data() : undefined,
+      );
+      const isFull = currentMeta.confirmedCount >= currentMeta.settings.seatLimit;
+
+      if (isFull && !payload.joinWaitlist) {
+        throw new SeatsFullError();
+      }
+
+      const isWaitlist = isFull;
+      const nextConfirmed = isWaitlist
+        ? currentMeta.confirmedCount
+        : currentMeta.confirmedCount + 1;
+      const nextWaitlist = isWaitlist
+        ? currentMeta.waitlistCount + 1
+        : currentMeta.waitlistCount;
+
+      tx.set(rsvpRef, {
+        momName,
+        childNameAge,
+        phone,
+        attending,
+        doctorTopic,
+        paediatricianQuestion,
+        coffeeOrder,
+        isWaitlist,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      tx.set(lockRef, {
+        status: isWaitlist ? 'waitlisted' : 'confirmed',
+        updatedAt: serverTimestamp(),
+      });
+
+      if (!metaSnap.exists()) {
+        tx.set(metaRef, {
+          title: sanitizeText(DEFAULT_EVENT_CONFIG.title, 120),
+          eventDate: sanitizeText(DEFAULT_EVENT_CONFIG.eventDate, 80),
+          eventTime: sanitizeText(DEFAULT_EVENT_CONFIG.eventTime, 80),
+          startIso: sanitizeText(DEFAULT_EVENT_CONFIG.startIso, 40),
+          endIso: sanitizeText(DEFAULT_EVENT_CONFIG.endIso, 40),
+          venueName: sanitizeText(DEFAULT_EVENT_CONFIG.venueName, 120),
+          venueAddress: sanitizeText(DEFAULT_EVENT_CONFIG.venueAddress, 180),
+          mapsUrl: sanitizeText(DEFAULT_EVENT_CONFIG.mapsUrl, 300),
+          specialGuest: sanitizeText(DEFAULT_EVENT_CONFIG.specialGuest, 120),
+          rsvpByDate: sanitizeText(DEFAULT_EVENT_CONFIG.rsvpByDate, 80),
+          seatLimit: DEFAULT_EVENT_CONFIG.seatLimit,
+          confirmedCount: nextConfirmed,
+          waitlistCount: nextWaitlist,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        tx.update(metaRef, {
+          confirmedCount: nextConfirmed,
+          waitlistCount: nextWaitlist,
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      return { isWaitlist };
+    });
+
+    const createdRecord: RsvpRecord = {
+      id: phoneHash,
+      createdAt: new Date().toISOString(),
+      momName,
+      childNameAge,
+      phone,
+      attending,
+      doctorTopic,
+      paediatricianQuestion,
+      coffeeOrder,
+      isWaitlist: result.isWaitlist,
+    };
+
+    void pushToClientGoogleSheet(createdRecord);
+
     return {
-      ok: false,
-      statusCode: 409,
-      code: 'SEATS_FULL',
-      error: 'Seats full – join waitlist',
+      ok: true,
+      statusCode: 201,
+      status: result.isWaitlist ? 'waitlisted' : 'confirmed',
+      rsvp: createdRecord,
     };
+  } catch (error) {
+    if (error instanceof DuplicatePhoneError) {
+      return {
+        ok: false,
+        statusCode: 409,
+        code: 'DUPLICATE_PHONE',
+        error: error.message,
+      };
+    }
+    if (error instanceof SeatsFullError) {
+      return {
+        ok: false,
+        statusCode: 409,
+        code: 'SEATS_FULL',
+        error: error.message,
+      };
+    }
+    handleFirestoreError(
+      error,
+      OperationType.CREATE,
+      `${RSVPS_COLLECTION}/${phoneHash}`,
+    );
   }
-
-  const nextId = rows.reduce((max, r) => Math.max(max, r.id), 0) + 1;
-  const created: RsvpRecord = {
-    id: nextId,
-    createdAt: new Date().toISOString(),
-    momName: payload.momName,
-    childNameAge: payload.childNameAge,
-    phone,
-    attending: payload.attending,
-    doctorTopic: payload.doctorTopic,
-    paediatricianQuestion: payload.paediatricianQuestion,
-    coffeeOrder: payload.coffeeOrder,
-    isWaitlist: isFull,
-  };
-  writeLocalRsvps([created, ...rows]);
-  void pushToClientGoogleSheet(created);
-
-  return {
-    ok: true,
-    statusCode: 201,
-    status: isFull ? 'waitlisted' : 'confirmed',
-    rsvp: created,
-  };
 }
 
 export async function checkAdminSessionClient(): Promise<{
   authenticated: boolean;
-  email?: string;
-  mode: 'backend' | 'static';
+  email: string | null;
 }> {
-  if (await isBackendAvailable()) {
-    try {
-      const res = await fetch(`${API_BASE}/api/admin/session`, {
-        credentials: API_BASE ? 'omit' : 'include',
-      });
-      if (res.ok) {
-        const data = (await res.json()) as {
-          authenticated: boolean;
-          admin?: { email: string };
-        };
-        if (data.authenticated && data.admin) {
-          return { authenticated: true, email: data.admin.email, mode: 'backend' };
-        }
-      }
-    } catch {
-      // fall through
-    }
-    return { authenticated: false, mode: 'backend' };
+  const user = await waitForAuthReady();
+  if (isAuthorizedAdminUser(user)) {
+    return { authenticated: true, email: user!.email! };
   }
-
-  const saved = sessionStorage.getItem(SS_STATIC_ADMIN_KEY);
-  return saved
-    ? { authenticated: true, email: saved, mode: 'static' }
-    : { authenticated: false, mode: 'static' };
+  return { authenticated: false, email: null };
 }
 
-export async function loginAdminWithCredentials(
-  username: string,
-  password: string,
-): Promise<{
+export async function verifyAdminGoogleUser(user: User): Promise<{
   ok: boolean;
-  token?: string;
-  email?: string;
-  mode: 'backend' | 'static';
-  error?: string;
-}> {
-  if (await isBackendAvailable()) {
-    const res = await fetch(`${API_BASE}/api/admin/login`, {
-      method: 'POST',
-      credentials: API_BASE ? 'omit' : 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: username.trim(), password }),
-    });
-    const rawText = await res.text();
-    let data: { error?: string; token?: string; email?: string } = {};
-    try {
-      data = rawText ? (JSON.parse(rawText) as typeof data) : {};
-    } catch {
-      return {
-        ok: false,
-        mode: 'backend',
-        error: `Server returned an unexpected response (${res.status}).`,
-      };
-    }
-    if (!res.ok || !data.token) {
-      return {
-        ok: false,
-        mode: 'backend',
-        error: data.error || 'Invalid username or password.',
-      };
-    }
-    return {
-      ok: true,
-      mode: 'backend',
-      token: data.token,
-      email: data.email || username.trim(),
-    };
-  }
-
-  // Zero-backend static verification via Web Crypto SHA-256
-  const [userHash, passHash] = await Promise.all([
-    sha256Hex(username.trim().toLowerCase()),
-    sha256Hex(password),
-  ]);
-  if (!ADMIN_USER_SHA256_LIST.includes(userHash) || passHash !== ADMIN_PASS_SHA256) {
-    return {
-      ok: false,
-      mode: 'static',
-      error: 'Invalid username or password.',
-    };
-  }
-
-  const email = username.trim();
-  sessionStorage.setItem(SS_STATIC_ADMIN_KEY, email);
-  return {
-    ok: true,
-    mode: 'static',
-    token: 'static-session',
-    email,
-  };
-}
-
-export async function verifyAdminGoogleToken(
-  idToken: string,
-  email: string | null,
-  emailVerified: boolean,
-): Promise<{
-  ok: boolean;
-  mode: 'backend' | 'static';
   email?: string;
   error?: string;
 }> {
-  if (await isBackendAvailable()) {
-    const verifyRes = await fetch(`${API_BASE}/api/admin/session`, {
-      headers: { Authorization: `Bearer ${idToken}` },
-    });
-    const verifyData = (await verifyRes.json()) as {
-      error?: string;
-      authenticated?: boolean;
-      admin?: { email: string };
-    };
-    if (!verifyRes.ok || !verifyData.authenticated) {
-      return {
-        ok: false,
-        mode: 'backend',
-        error: verifyData.error || 'This Google account is not authorized.',
-      };
-    }
-    return {
-      ok: true,
-      mode: 'backend',
-      email: verifyData.admin?.email || email || 'Admin',
-    };
-  }
-
-  const normalized = (email || '').toLowerCase();
-  if (!emailVerified || normalized !== ALLOWED_ADMIN_EMAIL) {
+  if (!user.emailVerified || !isAuthorizedAdminUser(user)) {
     return {
       ok: false,
-      mode: 'static',
-      error: 'Only the authorized organizer Google account can access admin.',
+      error: `This Google account is not authorized. Please sign in with ${ALLOWED_ADMIN_EMAIL}.`,
     };
   }
-  sessionStorage.setItem(SS_STATIC_ADMIN_KEY, normalized);
-  return { ok: true, mode: 'static', email: normalized };
+  return { ok: true, email: user.email! };
 }
 
 export async function logoutAdminClient(): Promise<void> {
-  sessionStorage.removeItem(SS_STATIC_ADMIN_KEY);
-  if (await isBackendAvailable()) {
-    await fetch(`${API_BASE}/api/admin/logout`, {
-      method: 'POST',
-      credentials: API_BASE ? 'omit' : 'include',
-    }).catch(() => undefined);
-  }
+  await signOut(auth).catch(() => undefined);
 }
 
-export async function fetchAdminRsvps(token: string | null): Promise<{
-  rsvps: RsvpRecord[];
-  summary: EventSummaryResponse;
-  unauthorized?: boolean;
-}> {
-  if (await isBackendAvailable()) {
-    const res = await fetch(`${API_BASE}/api/admin/rsvps`, {
-      credentials: API_BASE ? 'omit' : 'include',
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+async function syncEventMetaCounts(
+  currentSettings: EventConfig,
+  rsvpsList: RsvpRecord[],
+): Promise<EventSummaryResponse> {
+  const confirmedCount = rsvpsList.filter((r) => !r.isWaitlist).length;
+  const waitlistCount = rsvpsList.filter((r) => r.isWaitlist).length;
+  const metaRef = doc(firestore, EVENT_META_COLLECTION, EVENT_META_DOC_ID);
+
+  try {
+    await setDoc(metaRef, {
+      title: sanitizeText(currentSettings.title, 120),
+      eventDate: sanitizeText(currentSettings.eventDate, 80),
+      eventTime: sanitizeText(currentSettings.eventTime, 80),
+      startIso: sanitizeText(currentSettings.startIso, 40),
+      endIso: sanitizeText(currentSettings.endIso, 40),
+      venueName: sanitizeText(currentSettings.venueName, 120),
+      venueAddress: sanitizeText(currentSettings.venueAddress, 180),
+      mapsUrl: sanitizeText(currentSettings.mapsUrl, 300),
+      specialGuest: sanitizeText(currentSettings.specialGuest, 120),
+      rsvpByDate: sanitizeText(currentSettings.rsvpByDate, 80),
+      seatLimit: Math.max(1, Math.min(1000, Math.round(currentSettings.seatLimit))),
+      confirmedCount,
+      waitlistCount,
+      updatedAt: serverTimestamp(),
     });
-    if (res.status === 401 || res.status === 403) {
-      return {
-        rsvps: [],
-        summary: buildLocalSummary(),
-        unauthorized: true,
-      };
-    }
-    if (!res.ok) {
-      throw new Error('Could not load RSVP list.');
-    }
-    return (await res.json()) as {
-      rsvps: RsvpRecord[];
-      summary: EventSummaryResponse;
-    };
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.WRITE,
+      `${EVENT_META_COLLECTION}/${EVENT_META_DOC_ID}`,
+    );
   }
 
+  const seatsLeft = Math.max(0, currentSettings.seatLimit - confirmedCount);
   return {
-    rsvps: readLocalRsvps(),
-    summary: buildLocalSummary(),
+    settings: currentSettings,
+    confirmedCount,
+    waitlistCount,
+    seatsLeft,
+    isFull: seatsLeft <= 0,
   };
 }
 
-export async function updateAdminRsvp(
-  id: number,
-  fields: Omit<RsvpRecord, 'id' | 'createdAt'>,
-  token: string | null,
-) {
-  if (await isBackendAvailable()) {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+export async function fetchAdminRsvps(): Promise<{
+  unauthorized?: boolean;
+  rsvps: RsvpRecord[];
+  summary: EventSummaryResponse;
+}> {
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    return {
+      unauthorized: true,
+      rsvps: [],
+      summary: {
+        settings: DEFAULT_EVENT_CONFIG,
+        confirmedCount: 0,
+        waitlistCount: 0,
+        seatsLeft: DEFAULT_EVENT_CONFIG.seatLimit,
+        isFull: false,
+      },
     };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/api/admin/rsvps/${id}`, {
-      method: 'PATCH',
-      credentials: API_BASE ? 'omit' : 'include',
-      headers,
-      body: JSON.stringify(fields),
-    });
-    const data = (await res.json()) as { error?: string };
-    if (!res.ok) throw new Error(data.error || 'Failed to update RSVP.');
-    return;
   }
 
-  const phone = normalizeIndianPhone(fields.phone);
-  if (!/^\d{10}$/.test(phone)) {
-    throw new Error('Phone must be 10 digits.');
+  const metaRef = doc(firestore, EVENT_META_COLLECTION, EVENT_META_DOC_ID);
+  let metaSnap;
+  try {
+    metaSnap = await getDoc(metaRef);
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      OperationType.GET,
+      `${EVENT_META_COLLECTION}/${EVENT_META_DOC_ID}`,
+    );
   }
-  const rows = readLocalRsvps();
-  const idx = rows.findIndex((r) => r.id === id);
-  if (idx === -1) throw new Error('RSVP not found.');
-  rows[idx] = { ...rows[idx], ...fields, phone };
-  writeLocalRsvps(rows);
+
+  let rsvpSnap;
+  try {
+    const q = query(
+      collection(firestore, RSVPS_COLLECTION),
+      orderBy('createdAt', 'desc'),
+    );
+    rsvpSnap = await getDocs(q);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, RSVPS_COLLECTION);
+  }
+
+  const rows = rsvpSnap.docs.map((d) => mapRsvpDoc(d.id, d.data()));
+  const baseSummary = mapEventMetaDoc(metaSnap.exists() ? metaSnap.data() : undefined);
+  const actualConfirmed = rows.filter((r) => !r.isWaitlist).length;
+  const actualWaitlist = rows.filter((r) => r.isWaitlist).length;
+
+  // Keep public seat counters in sync with actual RSVP docs
+  if (
+    !metaSnap.exists() ||
+    baseSummary.confirmedCount !== actualConfirmed ||
+    baseSummary.waitlistCount !== actualWaitlist
+  ) {
+    const synced = await syncEventMetaCounts(baseSummary.settings, rows);
+    return { rsvps: rows, summary: synced };
+  }
+
+  return { rsvps: rows, summary: baseSummary };
 }
 
-export async function deleteAdminRsvp(id: number, token: string | null) {
-  if (await isBackendAvailable()) {
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/api/admin/rsvps/${id}`, {
-      method: 'DELETE',
-      credentials: API_BASE ? 'omit' : 'include',
-      headers,
-    });
-    if (!res.ok) {
-      const data = (await res.json()) as { error?: string };
-      throw new Error(data.error || 'Failed to delete RSVP.');
-    }
-    return;
+export async function updateAdminRsvp(
+  id: string,
+  updates: {
+    momName: string;
+    childNameAge: string;
+    phone: string;
+    attending: string;
+    doctorTopic: string;
+    paediatricianQuestion: string;
+    coffeeOrder: string;
+    isWaitlist: boolean;
+  },
+): Promise<void> {
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    throw new Error('Unauthorized. Please sign in with Google.');
   }
 
-  const rows = readLocalRsvps().filter((r) => r.id !== id);
-  writeLocalRsvps(rows);
+  const normalizedPhone = normalizeIndianPhone(updates.phone);
+  if (!/^[0-9]{10}$/.test(normalizedPhone)) {
+    throw new Error('Phone must be a valid 10-digit number.');
+  }
+
+  const momName = sanitizeText(updates.momName, 120);
+  const childNameAge = sanitizeText(updates.childNameAge, 120);
+  const attending = sanitizeText(updates.attending, 80);
+  const doctorTopic = sanitizeText(updates.doctorTopic || '', 160);
+  const paediatricianQuestion = sanitizeText(updates.paediatricianQuestion || '', 1500);
+  const coffeeOrder = sanitizeText(updates.coffeeOrder, 120);
+
+  const newHash = await sha256Hex(normalizedPhone);
+  const oldRsvpRef = doc(firestore, RSVPS_COLLECTION, id);
+  const oldLockRef = doc(firestore, RSVP_LOCKS_COLLECTION, id);
+
+  try {
+    const batch = writeBatch(firestore);
+
+    if (newHash === id) {
+      batch.update(oldRsvpRef, {
+        momName,
+        childNameAge,
+        phone: normalizedPhone,
+        attending,
+        doctorTopic,
+        paediatricianQuestion,
+        coffeeOrder,
+        isWaitlist: Boolean(updates.isWaitlist),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(oldLockRef, {
+        status: updates.isWaitlist ? 'waitlisted' : 'confirmed',
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const newRsvpRef = doc(firestore, RSVPS_COLLECTION, newHash);
+      const newLockRef = doc(firestore, RSVP_LOCKS_COLLECTION, newHash);
+      const existingTarget = await getDoc(newLockRef);
+      if (existingTarget.exists()) {
+        throw new Error('Another RSVP already uses this contact number.');
+      }
+
+      batch.set(newRsvpRef, {
+        momName,
+        childNameAge,
+        phone: normalizedPhone,
+        attending,
+        doctorTopic,
+        paediatricianQuestion,
+        coffeeOrder,
+        isWaitlist: Boolean(updates.isWaitlist),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      batch.set(newLockRef, {
+        status: updates.isWaitlist ? 'waitlisted' : 'confirmed',
+        updatedAt: serverTimestamp(),
+      });
+      batch.delete(oldRsvpRef);
+      batch.delete(oldLockRef);
+    }
+
+    await batch.commit();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Another RSVP')) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.UPDATE, `${RSVPS_COLLECTION}/${id}`);
+  }
+}
+
+export async function deleteAdminRsvp(id: string): Promise<void> {
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    throw new Error('Unauthorized. Please sign in with Google.');
+  }
+
+  try {
+    const batch = writeBatch(firestore);
+    batch.delete(doc(firestore, RSVPS_COLLECTION, id));
+    batch.delete(doc(firestore, RSVP_LOCKS_COLLECTION, id));
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `${RSVPS_COLLECTION}/${id}`);
+  }
 }
 
 export async function bulkImportAdminRsvps(
-  mappedRows: Array<{
+  rows: Array<{
     momName: string;
     childNameAge: string;
     phone: string;
@@ -534,125 +737,125 @@ export async function bulkImportAdminRsvps(
     paediatricianQuestion: string;
     coffeeOrder: string;
   }>,
-  token: string | null,
 ): Promise<{
   importedCount: number;
   updatedCount: number;
   skipped: Array<{ row: number; reason: string }>;
 }> {
-  if (await isBackendAvailable()) {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/api/admin/rsvps/import`, {
-      method: 'POST',
-      credentials: API_BASE ? 'omit' : 'include',
-      headers,
-      body: JSON.stringify({ rows: mappedRows }),
-    });
-    const result = (await res.json()) as {
-      error?: string;
-      importedCount?: number;
-      updatedCount?: number;
-      skipped?: Array<{ row: number; reason: string }>;
-    };
-    if (!res.ok) {
-      throw new Error(result.error || 'Import failed.');
-    }
-    return {
-      importedCount: result.importedCount ?? 0,
-      updatedCount: result.updatedCount ?? 0,
-      skipped: result.skipped ?? [],
-    };
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    throw new Error('Unauthorized. Please sign in with Google.');
   }
 
-  const rows = readLocalRsvps();
-  const settings = readLocalSettings();
-  let runningConfirmed = rows.filter((r) => !r.isWaitlist).length;
-  let nextId = rows.reduce((max, r) => Math.max(max, r.id), 0) + 1;
+  const currentData = await fetchAdminRsvps();
+  const existingById = new Map(currentData.rsvps.map((r) => [r.id, r]));
+  let confirmedCount = currentData.summary.confirmedCount;
+  const seatLimit = currentData.summary.settings.seatLimit;
+
   let importedCount = 0;
   let updatedCount = 0;
   const skipped: Array<{ row: number; reason: string }> = [];
 
-  mappedRows.forEach((raw, idx) => {
-    const phone = normalizeIndianPhone(raw.phone);
-    if (!raw.momName || !raw.childNameAge || !/^\d{10}$/.test(phone)) {
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const phone = normalizeIndianPhone(row.phone || '');
+    const momName = sanitizeText(row.momName || '', 120);
+    const childNameAge = sanitizeText(row.childNameAge || '', 120);
+    const attending = sanitizeText(row.attending || ATTENDING_OPTIONS[0], 80);
+    const doctorTopic = sanitizeText(row.doctorTopic || '', 160);
+    const paediatricianQuestion = sanitizeText(row.paediatricianQuestion || '', 1500);
+    const coffeeOrder = sanitizeText(row.coffeeOrder || 'Cappuccino', 120);
+
+    if (momName.length < 2 || childNameAge.length < 2 || !/^[0-9]{10}$/.test(phone)) {
       skipped.push({
-        row: idx + 1,
-        reason: "Missing Alpha mom's name, child details, or valid 10-digit phone",
+        row: i + 2,
+        reason: 'Missing valid name, child info, or 10-digit phone',
       });
-      return;
+      continue;
     }
-    const existingIdx = rows.findIndex((r) => r.phone === phone);
-    const isWaitlist = /\(Waitlist\)/i.test(raw.attending);
-    const cleanAttending =
-      raw.attending.replace(/\s*\(Waitlist\)\s*$/i, '') ||
-      'Absolutely! Count me in ☕';
 
-    if (existingIdx !== -1) {
-      rows[existingIdx] = {
-        ...rows[existingIdx],
-        momName: raw.momName,
-        childNameAge: raw.childNameAge,
-        attending: cleanAttending,
-        doctorTopic: raw.doctorTopic,
-        paediatricianQuestion: raw.paediatricianQuestion,
-        coffeeOrder: raw.coffeeOrder || 'Cappuccino',
-      };
-      updatedCount++;
-    } else {
-      const waitlisted = isWaitlist || runningConfirmed >= settings.seatLimit;
-      rows.unshift({
-        id: nextId++,
-        createdAt: new Date().toISOString(),
-        momName: raw.momName,
-        childNameAge: raw.childNameAge,
-        phone,
-        attending: cleanAttending,
-        doctorTopic: raw.doctorTopic,
-        paediatricianQuestion: raw.paediatricianQuestion,
-        coffeeOrder: raw.coffeeOrder || 'Cappuccino',
-        isWaitlist: waitlisted,
-      });
-      if (!waitlisted) runningConfirmed++;
-      importedCount++;
+    const phoneHash = await sha256Hex(phone);
+    const existing = existingById.get(phoneHash);
+    const rsvpRef = doc(firestore, RSVPS_COLLECTION, phoneHash);
+    const lockRef = doc(firestore, RSVP_LOCKS_COLLECTION, phoneHash);
+
+    try {
+      const batch = writeBatch(firestore);
+      if (existing) {
+        batch.update(rsvpRef, {
+          momName,
+          childNameAge,
+          phone,
+          attending,
+          doctorTopic,
+          paediatricianQuestion,
+          coffeeOrder,
+          isWaitlist: existing.isWaitlist,
+          updatedAt: serverTimestamp(),
+        });
+        batch.set(lockRef, {
+          status: existing.isWaitlist ? 'waitlisted' : 'confirmed',
+          updatedAt: serverTimestamp(),
+        });
+        await batch.commit();
+        updatedCount++;
+      } else {
+        const isWaitlist = confirmedCount >= seatLimit;
+        if (!isWaitlist) confirmedCount++;
+        batch.set(rsvpRef, {
+          momName,
+          childNameAge,
+          phone,
+          attending,
+          doctorTopic,
+          paediatricianQuestion,
+          coffeeOrder,
+          isWaitlist,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        batch.set(lockRef, {
+          status: isWaitlist ? 'waitlisted' : 'confirmed',
+          updatedAt: serverTimestamp(),
+        });
+        await batch.commit();
+        importedCount++;
+      }
+    } catch (error) {
+      handleFirestoreError(
+        error,
+        OperationType.WRITE,
+        `${RSVPS_COLLECTION}/${phoneHash}`,
+      );
     }
-  });
-
-  if (importedCount === 0 && updatedCount === 0) {
-    throw new Error('No valid RSVP rows found in the uploaded sheet.');
   }
 
-  writeLocalRsvps(rows);
   return { importedCount, updatedCount, skipped };
 }
 
 export async function updateAdminEventSettings(
   settings: EventConfig,
-  token: string | null,
 ): Promise<EventConfig> {
-  if (await isBackendAvailable()) {
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE}/api/admin/settings`, {
-      method: 'PUT',
-      credentials: API_BASE ? 'omit' : 'include',
-      headers,
-      body: JSON.stringify(settings),
-    });
-    const data = (await res.json()) as {
-      error?: string;
-      settings?: EventConfig;
-    };
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to save event settings.');
-    }
-    return data.settings ?? settings;
+  if (!isAuthorizedAdminUser(auth.currentUser)) {
+    throw new Error('Unauthorized. Please sign in with Google.');
   }
 
-  writeLocalSettings(settings);
-  return settings;
+  const current = await fetchAdminRsvps();
+  const nextSettings: EventConfig = {
+    title: sanitizeText(settings.title, 120) || DEFAULT_EVENT_CONFIG.title,
+    eventDate: sanitizeText(settings.eventDate, 80) || DEFAULT_EVENT_CONFIG.eventDate,
+    eventTime: sanitizeText(settings.eventTime, 80) || DEFAULT_EVENT_CONFIG.eventTime,
+    startIso: sanitizeText(settings.startIso, 40) || DEFAULT_EVENT_CONFIG.startIso,
+    endIso: sanitizeText(settings.endIso, 40) || DEFAULT_EVENT_CONFIG.endIso,
+    venueName: sanitizeText(settings.venueName, 120) || DEFAULT_EVENT_CONFIG.venueName,
+    venueAddress:
+      sanitizeText(settings.venueAddress, 180) || DEFAULT_EVENT_CONFIG.venueAddress,
+    mapsUrl: sanitizeText(settings.mapsUrl, 300) || DEFAULT_EVENT_CONFIG.mapsUrl,
+    specialGuest:
+      sanitizeText(settings.specialGuest, 120) || DEFAULT_EVENT_CONFIG.specialGuest,
+    rsvpByDate: sanitizeText(settings.rsvpByDate, 80) || DEFAULT_EVENT_CONFIG.rsvpByDate,
+    seatLimit: Math.max(1, Math.min(1000, Math.round(Number(settings.seatLimit) || 25))),
+  };
+
+  await syncEventMetaCounts(nextSettings, current.rsvps);
+  return nextSettings;
 }

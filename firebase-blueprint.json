@@ -1,0 +1,207 @@
+{
+  "entities": {
+    "EventMeta": {
+      "title": "EventMeta",
+      "description": "Public event configuration and live seat counters for Alpha Moms – Coffee Meet.",
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "eventDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "eventTime": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "startIso": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "endIso": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "venueName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "venueAddress": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 180
+        },
+        "mapsUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "specialGuest": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "rsvpByDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "seatLimit": {
+          "type": "integer"
+        },
+        "confirmedCount": {
+          "type": "integer"
+        },
+        "waitlistCount": {
+          "type": "integer"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "title",
+        "eventDate",
+        "eventTime",
+        "startIso",
+        "endIso",
+        "venueName",
+        "venueAddress",
+        "mapsUrl",
+        "specialGuest",
+        "rsvpByDate",
+        "seatLimit",
+        "confirmedCount",
+        "waitlistCount",
+        "updatedAt"
+      ]
+    },
+    "RsvpLock": {
+      "title": "RsvpLock",
+      "description": "PII-free existence marker keyed by SHA-256 hash of a normalized 10-digit phone number for duplicate detection.",
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "waitlisted"]
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["status", "updatedAt"]
+    },
+    "Rsvp": {
+      "title": "Rsvp",
+      "description": "Private guest RSVP record containing PII (name, child, phone, doctor topic, 2am questions, coffee order).",
+      "type": "object",
+      "properties": {
+        "momName": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "childNameAge": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{10}$"
+        },
+        "attending": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "doctorTopic": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 160
+        },
+        "paediatricianQuestion": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1500
+        },
+        "coffeeOrder": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "isWaitlist": {
+          "type": "boolean"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "momName",
+        "childNameAge",
+        "phone",
+        "attending",
+        "doctorTopic",
+        "paediatricianQuestion",
+        "coffeeOrder",
+        "isWaitlist",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Authorized organizer admin UID marker document.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/event_meta/{docId}": {
+      "schema": { "$ref": "#/entities/EventMeta" },
+      "description": "Public event details and live confirmed/waitlist counts at /event_meta/current."
+    },
+    "/rsvp_locks/{phoneHash}": {
+      "schema": { "$ref": "#/entities/RsvpLock" },
+      "description": "PII-free phone-hash lock documents used to prevent duplicate phone submissions without exposing PII."
+    },
+    "/rsvps/{phoneHash}": {
+      "schema": { "$ref": "#/entities/Rsvp" },
+      "description": "Private RSVP records containing guest PII; readable and listable only by verified organizer admins."
+    },
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Organizer admin role registry."
+    }
+  }
+}

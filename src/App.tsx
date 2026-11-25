@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AdminDashboard } from './components/AdminDashboard';
 import { CoffeeBackdrop } from './components/CoffeeBackdrop';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { RsvpCarousel } from './components/RsvpCarousel';
 
 export default function App() {
@@ -25,13 +26,15 @@ export default function App() {
   };
 
   return (
-    <div className="relative min-h-[100dvh] w-full overflow-x-hidden">
-      <CoffeeBackdrop />
-      {route === 'admin' ? (
-        <AdminDashboard onBackToRsvp={() => navigateTo('rsvp')} />
-      ) : (
-        <RsvpCarousel onOpenAdmin={() => navigateTo('admin')} />
-      )}
-    </div>
+    <ErrorBoundary>
+      <div className="relative min-h-[100dvh] w-full overflow-x-hidden">
+        <CoffeeBackdrop />
+        {route === 'admin' ? (
+          <AdminDashboard onBackToRsvp={() => navigateTo('rsvp')} />
+        ) : (
+          <RsvpCarousel onOpenAdmin={() => navigateTo('admin')} />
+        )}
+      </div>
+    </ErrorBoundary>
   );
 }
