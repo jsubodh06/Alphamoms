@@ -28,7 +28,7 @@ export const eventSettings = pgTable('event_settings', {
     .default('https://maps.google.com/?q=Bungalow+No.+6+Indore'),
   specialGuest: text('special_guest').notNull().default('Dr. Pratyush Jain'),
   rsvpByDate: text('rsvp_by_date').notNull().default('28th Nov 2026'),
-  seatLimit: integer('seat_limit').notNull().default(25),
+  seatLimit: integer('seat_limit').notNull().default(30),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
 

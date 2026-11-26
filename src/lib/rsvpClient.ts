@@ -52,6 +52,7 @@ const EVENT_META_COLLECTION = 'event_meta';
 const EVENT_META_DOC_ID = 'current';
 const RSVPS_COLLECTION = 'rsvps';
 const RSVP_LOCKS_COLLECTION = 'rsvp_locks';
+const CURRENT_SEAT_LIMIT_VERSION = 2;
 
 class DuplicatePhoneError extends Error {
   constructor() {
@@ -141,10 +142,17 @@ function mapEventMetaDoc(data: Record<string, unknown> | undefined): EventSummar
       typeof data.rsvpByDate === 'string' && data.rsvpByDate.trim()
         ? data.rsvpByDate
         : DEFAULT_EVENT_CONFIG.rsvpByDate,
-    seatLimit:
-      typeof data.seatLimit === 'number' && Number.isInteger(data.seatLimit) && data.seatLimit >= 1
-        ? data.seatLimit
-        : DEFAULT_EVENT_CONFIG.seatLimit,
+    seatLimit: (() => {
+      const rawLimit =
+        typeof data.seatLimit === 'number' &&
+        Number.isInteger(data.seatLimit) &&
+        data.seatLimit >= 1
+          ? data.seatLimit
+          : DEFAULT_EVENT_CONFIG.seatLimit;
+      const isLegacyUnmigrated =
+        data.seatLimitVersion !== CURRENT_SEAT_LIMIT_VERSION && rawLimit === 25;
+      return isLegacyUnmigrated ? DEFAULT_EVENT_CONFIG.seatLimit : rawLimit;
+    })(),
   };
 
   const confirmedCount =
@@ -430,16 +438,30 @@ export async function submitPublicRsvp(payload: {
           specialGuest: sanitizeText(DEFAULT_EVENT_CONFIG.specialGuest, 120),
           rsvpByDate: sanitizeText(DEFAULT_EVENT_CONFIG.rsvpByDate, 80),
           seatLimit: DEFAULT_EVENT_CONFIG.seatLimit,
+          seatLimitVersion: CURRENT_SEAT_LIMIT_VERSION,
           confirmedCount: nextConfirmed,
           waitlistCount: nextWaitlist,
           updatedAt: serverTimestamp(),
         });
       } else {
-        tx.update(metaRef, {
-          confirmedCount: nextConfirmed,
-          waitlistCount: nextWaitlist,
-          updatedAt: serverTimestamp(),
-        });
+        const existingData = metaSnap.data();
+        const needsLegacySeatUpgrade =
+          !('seatLimitVersion' in existingData) && existingData.seatLimit === 25;
+        if (needsLegacySeatUpgrade) {
+          tx.update(metaRef, {
+            seatLimit: DEFAULT_EVENT_CONFIG.seatLimit,
+            seatLimitVersion: CURRENT_SEAT_LIMIT_VERSION,
+            confirmedCount: nextConfirmed,
+            waitlistCount: nextWaitlist,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          tx.update(metaRef, {
+            confirmedCount: nextConfirmed,
+            waitlistCount: nextWaitlist,
+            updatedAt: serverTimestamp(),
+          });
+        }
       }
 
       return { isWaitlist };
@@ -541,6 +563,7 @@ async function syncEventMetaCounts(
       specialGuest: sanitizeText(currentSettings.specialGuest, 120),
       rsvpByDate: sanitizeText(currentSettings.rsvpByDate, 80),
       seatLimit: Math.max(1, Math.min(1000, Math.round(currentSettings.seatLimit))),
+      seatLimitVersion: CURRENT_SEAT_LIMIT_VERSION,
       confirmedCount,
       waitlistCount,
       updatedAt: serverTimestamp(),
@@ -610,9 +633,13 @@ export async function fetchAdminRsvps(): Promise<{
   const actualConfirmed = rows.filter((r) => !r.isWaitlist).length;
   const actualWaitlist = rows.filter((r) => r.isWaitlist).length;
 
-  // Keep public seat counters in sync with actual RSVP docs
+  // Keep public seat counters & capacity version in sync with actual RSVP docs
+  const metaData = metaSnap.exists() ? metaSnap.data() : undefined;
+  const needsCapacityVersionSync =
+    !metaData || metaData.seatLimitVersion !== CURRENT_SEAT_LIMIT_VERSION;
   if (
     !metaSnap.exists() ||
+    needsCapacityVersionSync ||
     baseSummary.confirmedCount !== actualConfirmed ||
     baseSummary.waitlistCount !== actualWaitlist
   ) {
@@ -853,7 +880,10 @@ export async function updateAdminEventSettings(
     specialGuest:
       sanitizeText(settings.specialGuest, 120) || DEFAULT_EVENT_CONFIG.specialGuest,
     rsvpByDate: sanitizeText(settings.rsvpByDate, 80) || DEFAULT_EVENT_CONFIG.rsvpByDate,
-    seatLimit: Math.max(1, Math.min(1000, Math.round(Number(settings.seatLimit) || 25))),
+    seatLimit: Math.max(
+      1,
+      Math.min(1000, Math.round(Number(settings.seatLimit) || DEFAULT_EVENT_CONFIG.seatLimit)),
+    ),
   };
 
   await syncEventMetaCounts(nextSettings, current.rsvps);

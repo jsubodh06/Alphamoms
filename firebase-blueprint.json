@@ -58,6 +58,10 @@
         "seatLimit": {
           "type": "integer"
         },
+        "seatLimitVersion": {
+          "type": "integer",
+          "description": "Migration marker for default seat capacity updates (version 2 = 30 seats)."
+        },
         "confirmedCount": {
           "type": "integer"
         },

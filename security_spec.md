@@ -2,7 +2,7 @@
 
 ## Data Invariants
 1. **PII Isolation**: `/rsvps/{phoneHash}` contains guest PII (`momName`, `childNameAge`, `phone`). Only verified organizer admins (`email_verified == true` and allowlisted email or `/admins/{uid}` document) may `get`, `list`, or `delete` `/rsvps`.
-2. **Public Seat Counter Integrity**: `/event_meta/current` is publicly readable via `get` (never `list`). Non-admin updates may ONLY increment `confirmedCount` by `+1` (strictly while `confirmedCount < seatLimit`) or `waitlistCount` by `+1`, and must set `updatedAt == request.time`.
+2. **Public Seat Counter Integrity**: `/event_meta/current` is publicly readable via `get` (never `list`). Non-admin creates require `seatLimit == 30`. Non-admin updates may ONLY increment `confirmedCount` by `+1` (strictly while `confirmedCount < seatLimit`) or `waitlistCount` by `+1`, and must set `updatedAt == request.time` (with a strictly bounded one-time legacy migration from `seatLimit == 25` to `seatLimit == 30, seatLimitVersion == 2` only when `seatLimitVersion` is absent).
 3. **Atomicity & Duplicate Prevention**: Every public RSVP creation must atomically create `/rsvp_locks/{phoneHash}` and `/rsvps/{phoneHash}` together (`existsAfter`), keyed by the 64-char hex SHA-256 hash of the normalized 10-digit phone number.
 4. **Immutability**: `createdAt` is immutable on all `/rsvps` updates. For public self-updates, `phone` and `isWaitlist` are also immutable so a guest cannot hijack another number or bypass the waitlist.
 5. **Strict Bounds & Keys**: Every document write validates exact allowed keys (`hasAll` + `hasOnly`), exact types, regex patterns (`^[0-9]{10}$` for phone, `^[a-f0-9]{64}$` for `phoneHash`), and `maxLength` bounds matching `firebase-blueprint.json`.

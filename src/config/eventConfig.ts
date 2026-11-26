@@ -25,7 +25,7 @@ export const DEFAULT_EVENT_CONFIG: EventConfig = {
   mapsUrl: 'https://maps.google.com/?q=Bungalow+No.+6+Indore',
   specialGuest: 'Dr. Pratyush Jain',
   rsvpByDate: '28th Nov 2026',
-  seatLimit: 25,
+  seatLimit: 30,
 };
 
 export const ATTENDING_OPTIONS = [
