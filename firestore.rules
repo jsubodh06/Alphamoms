@@ -88,15 +88,15 @@ service cloud.firestore {
               )
             )
           ) || (
-            !('seatLimitVersion' in existing())
-            && existing().seatLimit == 25
+            (!('seatLimitVersion' in existing()) || (existing().seatLimitVersion is int && existing().seatLimitVersion < 3))
+            && (existing().seatLimit == 25 || existing().seatLimit == 30)
             && incoming().diff(existing()).affectedKeys().hasOnly(['seatLimit', 'seatLimitVersion', 'confirmedCount', 'waitlistCount', 'updatedAt'])
-            && incoming().seatLimit == 30
-            && incoming().seatLimitVersion == 2
+            && incoming().seatLimit == 40
+            && incoming().seatLimitVersion == 3
             && (
               (
                 incoming().confirmedCount == existing().confirmedCount + 1
-                && existing().confirmedCount < 30
+                && existing().confirmedCount < 40
                 && incoming().waitlistCount == existing().waitlistCount
               ) || (
                 incoming().waitlistCount == existing().waitlistCount + 1
@@ -162,8 +162,8 @@ service cloud.firestore {
         && incoming().updatedAt == request.time
         && (
           isAdmin() || (
-            incoming().seatLimit == 30
-            && (!('seatLimitVersion' in incoming()) || incoming().seatLimitVersion == 2)
+            incoming().seatLimit == 40
+            && (!('seatLimitVersion' in incoming()) || incoming().seatLimitVersion == 3)
             && (
               (incoming().confirmedCount == 1 && incoming().waitlistCount == 0) ||
               (incoming().confirmedCount == 0 && incoming().waitlistCount == 1)
