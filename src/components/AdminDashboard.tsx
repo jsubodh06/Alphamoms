@@ -672,7 +672,7 @@ export function AdminDashboard({
               <div className="rounded-2xl border border-[#d9b99b]/20 bg-[#2e180d]/90 p-4">
                 <p className="text-xs text-[#d9b99b]/80">Confirmed / Limit</p>
                 <p className="mt-1 text-2xl font-semibold text-[#f7ecdc] tabular-nums">
-                  {summary?.confirmedCount ?? 0} / {summary?.settings.seatLimit ?? 40}
+                  {summary?.confirmedCount ?? 0} / {summary?.settings.seatLimit ?? 50}
                 </p>
               </div>
               <div className="col-span-2 sm:col-span-4 lg:col-span-1 rounded-2xl border border-[#d9b99b]/20 bg-[#2e180d]/90 p-4">

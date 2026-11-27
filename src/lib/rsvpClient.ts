@@ -52,7 +52,7 @@ const EVENT_META_COLLECTION = 'event_meta';
 const EVENT_META_DOC_ID = 'current';
 const RSVPS_COLLECTION = 'rsvps';
 const RSVP_LOCKS_COLLECTION = 'rsvp_locks';
-const CURRENT_SEAT_LIMIT_VERSION = 3;
+const CURRENT_SEAT_LIMIT_VERSION = 4;
 
 class DuplicatePhoneError extends Error {
   constructor() {
@@ -153,7 +153,7 @@ function mapEventMetaDoc(data: Record<string, unknown> | undefined): EventSummar
         typeof data.seatLimitVersion === 'number' ? data.seatLimitVersion : 0;
       const isLegacyUnmigrated =
         existingVersion < CURRENT_SEAT_LIMIT_VERSION &&
-        (rawLimit === 25 || rawLimit === 30);
+        (rawLimit === 25 || rawLimit === 30 || rawLimit === 40);
       return isLegacyUnmigrated ? DEFAULT_EVENT_CONFIG.seatLimit : rawLimit;
     })(),
   };
@@ -454,7 +454,9 @@ export async function submitPublicRsvp(payload: {
             : 0;
         const needsLegacySeatUpgrade =
           existingVersion < CURRENT_SEAT_LIMIT_VERSION &&
-          (existingData.seatLimit === 25 || existingData.seatLimit === 30);
+          (existingData.seatLimit === 25 ||
+            existingData.seatLimit === 30 ||
+            existingData.seatLimit === 40);
         if (needsLegacySeatUpgrade) {
           tx.update(metaRef, {
             seatLimit: DEFAULT_EVENT_CONFIG.seatLimit,
